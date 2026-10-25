@@ -99,12 +99,26 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    import time
+    worker_uptime = (
+        (int(time.time()) - automated_trading_worker._started_at)
+        if (automated_trading_worker._started_at and automated_trading_worker.state.value == "RUNNING")
+        else 0
+    )
     return {
         "status": "healthy",
         "environment": settings.ENVIRONMENT,
         "testnet_enforced": settings.is_testnet,
         "upstream_ws_connected": websocket_manager.upstream_connected,
         "active_clients": len(websocket_manager.active_clients),
+        "worker_health": {
+            "state": automated_trading_worker.state.value,
+            "is_paused": automated_trading_worker.is_paused,
+            "uptime_seconds": worker_uptime,
+            "last_market_data_update_at": automated_trading_worker._last_market_data_update_at,
+            "last_reconciliation_at": automated_trading_worker._last_reconciliation_at,
+            "heartbeat_at": automated_trading_worker._heartbeat_at or int(time.time()),
+        },
     }
 
 

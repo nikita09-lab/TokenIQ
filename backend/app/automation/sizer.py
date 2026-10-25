@@ -143,9 +143,11 @@ class PositionSizer:
 
         # 7. Check available margin if provided
         final_notional = float(quantized_contracts * notional_per_contract)
-        if available_margin_usd is not None and available_margin_usd > 0:
-            # Require at least 20% margin coverage (equivalent to 5x max leverage margin)
-            # or fail safe
+        if available_margin_usd is not None:
+            if available_margin_usd <= 0:
+                raise PositionSizingError(
+                    f"Insufficient available margin: Account available margin is ${available_margin_usd:.2f}."
+                )
             if available_margin_usd < (final_notional * 0.1):
                 raise PositionSizingError(
                     f"Insufficient available margin (${available_margin_usd:.2f}) for order notional "

@@ -56,7 +56,12 @@ async def get_wallet_balances() -> Dict[str, Any]:
             "balances": overview["balances"],
             "total_balance_usd": overview["total_balance_usd"],
             "available_balance_usd": overview["available_balance_usd"],
+            "account_equity_usd": overview.get("account_equity_usd"),
             "total_margin_used_usd": overview["total_margin_used_usd"],
+            "order_margin_usd": overview.get("order_margin_usd"),
+            "position_margin_usd": overview.get("position_margin_usd"),
+            "account_currency": overview.get("account_currency", "USD"),
+            "last_balance_update_timestamp": overview.get("last_balance_update_timestamp"),
             "diagnostic": overview.get("diagnostic"),
         }
     except Exception as exc:

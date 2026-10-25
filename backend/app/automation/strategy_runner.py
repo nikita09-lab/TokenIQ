@@ -125,7 +125,33 @@ class AutomatedStrategyRunner:
                 )
             except PositionSizingError as sizer_err:
                 logger.warning(f"Position sizing rejected order: {sizer_err}")
-                return None
+                idempotency_key = signal_deduplicator.generate_idempotency_key(
+                    strategy_id=config.selected_strategy,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    candle_timestamp=candle_ts,
+                    signal_direction=signal_dir,
+                    position_intent=resolved_intent,
+                )
+                signal_id = f"sig_{symbol}_{candle_ts}_{uuid.uuid4().hex[:6]}"
+                return AutomatedSignal(
+                    signal_id=signal_id,
+                    strategy_id=config.selected_strategy,
+                    strategy_version="1.0.0",
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    candle_timestamp=candle_ts,
+                    signal_direction=signal_dir,
+                    position_intent=resolved_intent,
+                    entry_rationale=raw_signal.explanation,
+                    intended_price=close_price,
+                    intended_quantity=0.0,
+                    stop_loss_price=sl_price,
+                    take_profit_price=tp_price,
+                    idempotency_key=idempotency_key,
+                    lifecycle_state=SignalLifecycleState.REJECTED,
+                    rejection_reason=f"Position sizing rejected: {sizer_err}",
+                )
 
         # 6. Generate Idempotency Key & Construct AutomatedSignal
         idempotency_key = signal_deduplicator.generate_idempotency_key(

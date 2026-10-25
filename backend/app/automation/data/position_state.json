@@ -1,5 +1,5 @@
 {
-  "updated_at": 1792922339,
+  "updated_at": 1792927758,
   "positions": {
     "BTCUSD": {
       "symbol": "BTCUSD",
@@ -17,7 +17,7 @@
       "take_profit_price": null,
       "protection_verified": false,
       "opened_at": null,
-      "updated_at": 1792922339,
+      "updated_at": 1792927758,
       "closed_at": 1792909968,
       "realized_pnl_usd": 0.0,
       "last_exit_reason": null

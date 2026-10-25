@@ -89,6 +89,8 @@ SAMPLE_ACCOUNT_OK = {
 def setup_safety_environment():
     # Reset kill switch and enable trading for test baseline
     risk_service.engine.reset_kill_switch("Automated test suite initialization")
+    orig_notional = risk_service.engine.config.max_order_notional_usd
+    risk_service.engine.config.max_order_notional_usd = 500.0
     with patch.object(delta_client, "get_products", new_callable=AsyncMock) as mock_prod, \
          patch.object(delta_client, "get_account_overview", new_callable=AsyncMock) as mock_acc:
         mock_prod.return_value = SAMPLE_PRODUCTS
@@ -97,6 +99,7 @@ def setup_safety_environment():
         risk_service._cached_products = SAMPLE_PRODUCTS
         risk_service._products_cached_time = time.time()
         yield
+    risk_service.engine.config.max_order_notional_usd = orig_notional
 
 
 # ============================================================================

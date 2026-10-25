@@ -21,6 +21,7 @@ import {
   TrendingDown,
   Info,
   Check,
+  AlertCircle,
 } from 'lucide-react';
 import {
   getAutomationStatus,
@@ -427,6 +428,10 @@ export const AutomatedTradingPanel: React.FC<AutomatedTradingPanelProps> = ({
                   <span className="text-cyan-300 font-bold">{displayHost}</span>
                 </span>
                 <span>• Strategy: <span className="text-white font-bold">{displayStrategy}</span></span>
+                <span>• Wallet: <span className="text-cyan-300 font-bold">${(status?.wallet_balance_usd ?? 200).toFixed(2)}</span></span>
+                {status?.worker_heartbeat_at ? (
+                  <span>• Heartbeat: <span className="text-emerald-400 font-bold">{new Date(status.worker_heartbeat_at * 1000).toLocaleTimeString()}</span></span>
+                ) : null}
                 {status?.worker_uptime_seconds ? (
                   <span>• Uptime: <span className="text-emerald-400 font-bold">{Math.floor(status.worker_uptime_seconds / 60)}m {status.worker_uptime_seconds % 60}s</span></span>
                 ) : null}
@@ -502,7 +507,23 @@ export const AutomatedTradingPanel: React.FC<AutomatedTradingPanelProps> = ({
       </div>
 
       {/* Grid: Position Status, Protective Orders, and Realized Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Metric 0: Testnet Wallet Balance & Margin */}
+        <div className="p-4 rounded-xl bg-[#0D131F]/90 border border-white/[0.08] backdrop-blur flex flex-col gap-2">
+          <div className="flex items-center justify-between text-slate-400 text-xs">
+            <span>Testnet Wallet</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              USD
+            </span>
+          </div>
+          <span className="text-xl font-bold font-mono text-white">
+            ${(status?.wallet_balance_usd ?? 200).toFixed(2)} USD
+          </span>
+          <span className="text-[11px] text-slate-400 font-mono">
+            Avail Margin: ${(status?.available_margin_usd ?? 200).toFixed(2)} • Equity: ${(status?.account_equity_usd ?? status?.wallet_balance_usd ?? 200).toFixed(2)}
+          </span>
+        </div>
+
         {/* Metric 1: Current Position */}
         <div className="p-4 rounded-xl bg-[#0D131F]/90 border border-white/[0.08] backdrop-blur flex flex-col gap-2">
           <div className="flex items-center justify-between text-slate-400 text-xs">
@@ -589,10 +610,27 @@ export const AutomatedTradingPanel: React.FC<AutomatedTradingPanelProps> = ({
             ${(status?.daily_realized_pnl_usd ?? 0).toFixed(2)} USD
           </span>
           <span className="text-[11px] text-slate-400 font-mono">
-            Daily loss cap: ${(config?.maximum_daily_realized_loss ?? 100).toLocaleString()} USD
+            Daily loss cap: ${(config?.maximum_daily_realized_loss ?? 4).toLocaleString()} USD
           </span>
         </div>
       </div>
+
+      {/* Contract Specification & Conservative Sizing Notice */}
+      {Number(config?.maximum_order_notional ?? 20) < 85 && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
+          <div className="flex flex-col gap-1">
+            <span className="font-bold font-mono text-amber-300">
+              Conservative Sizing Guard: 1 BTCUSD Contract (~$80 USD) exceeds $20 Max Notional Limit
+            </span>
+            <p className="text-slate-300 leading-relaxed">
+              Delta Exchange India Testnet enforces a minimum trade size of <strong>1 contract</strong> (0.001 BTC = ~$80.24 USD notional at current price).
+              With your conservative limit of <strong>${Number(config?.maximum_order_notional ?? 20).toFixed(2)} USD</strong>, new entry signals will be rejected by the Risk Engine and Position Sizer as exceeding notional bounds.
+              To allow 1 contract to be traded automatically, update Maximum Order Notional to at least <strong>$85.00 USD</strong>.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Main Section: Left = Strategy & Position Sizing Configuration, Right = Latest Signal & Audit Log */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

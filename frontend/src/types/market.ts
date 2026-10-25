@@ -316,6 +316,8 @@ export interface WalletBalanceItemData {
   balance: number;
   available_balance: number;
   blocked_margin: number;
+  order_margin?: number;
+  position_margin?: number;
   usd_value?: number | null;
 }
 
@@ -361,12 +363,17 @@ export interface AccountOverviewData {
   total_balance_usd: number;
   available_balance_usd: number;
   total_margin_used_usd: number;
+  order_margin_usd?: number;
+  position_margin_usd?: number;
+  account_equity_usd?: number;
+  account_currency?: string;
   total_unrealized_pnl_usd: number;
   balances: WalletBalanceItemData[];
   positions: PositionItemData[];
   open_orders: OrderItemData[];
   recent_orders: OrderItemData[];
   last_updated_at: number;
+  last_balance_update_timestamp?: number;
   diagnostic?: string | null;
   warning?: string | null;
   disclaimer: string;
@@ -633,8 +640,14 @@ export interface AutomationStatusResponseData {
   last_candle_timestamp?: number | null;
   last_market_data_update_at?: number | null;
   last_reconciliation_at?: number | null;
+  last_reconciliation_result?: string | null;
   last_error?: string | null;
   worker_uptime_seconds: number;
+  wallet_balance_usd?: number | null;
+  available_margin_usd?: number | null;
+  account_equity_usd?: number | null;
+  daily_loss_limit_usd?: number | null;
+  worker_heartbeat_at?: number | null;
   disclaimer: string;
 }
 

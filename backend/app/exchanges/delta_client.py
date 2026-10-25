@@ -573,6 +573,8 @@ class DeltaExchangeClient:
         total_bal_usd = 0.0
         avail_bal_usd = 0.0
         margin_used_usd = 0.0
+        order_margin_usd = 0.0
+        position_margin_usd = 0.0
 
         for b in balances_raw:
             try:
@@ -580,6 +582,8 @@ class DeltaExchangeClient:
                 bal = float(b.get("balance") or 0.0)
                 avail = float(b.get("available_balance") or 0.0)
                 blocked = float(b.get("blocked_margin") or 0.0)
+                o_margin = float(b.get("order_margin") or 0.0)
+                p_margin = float(b.get("position_margin") or 0.0)
                 # For USDT or USD, assume 1:1 USD valuation
                 usd_val = bal if sym in ("USDT", "USD", "USDC") else None
 
@@ -587,6 +591,8 @@ class DeltaExchangeClient:
                     total_bal_usd += bal
                     avail_bal_usd += avail
                     margin_used_usd += blocked
+                    order_margin_usd += o_margin
+                    position_margin_usd += p_margin
 
                 normalized_balances.append({
                     "asset_id": int(b.get("asset_id") or 0),
@@ -594,6 +600,8 @@ class DeltaExchangeClient:
                     "balance": round(bal, 6),
                     "available_balance": round(avail, 6),
                     "blocked_margin": round(blocked, 6),
+                    "order_margin": round(o_margin, 6),
+                    "position_margin": round(p_margin, 6),
                     "usd_value": round(usd_val, 2) if usd_val is not None else None,
                 })
             except Exception:
@@ -685,6 +693,7 @@ class DeltaExchangeClient:
             except Exception:
                 continue
 
+        equity_usd = total_bal_usd + total_upnl_usd
         result = {
             "authenticated": is_auth,
             "is_testnet": True,
@@ -693,14 +702,19 @@ class DeltaExchangeClient:
             "masked_api_key": masked,
             "client_ip": client_ip,
             "total_balance_usd": round(total_bal_usd, 2),
+            "account_equity_usd": round(equity_usd, 2),
             "available_balance_usd": round(avail_bal_usd, 2),
             "total_margin_used_usd": round(margin_used_usd, 2),
+            "order_margin_usd": round(order_margin_usd, 2),
+            "position_margin_usd": round(position_margin_usd, 2),
             "total_unrealized_pnl_usd": round(total_upnl_usd, 4),
+            "account_currency": "USD",
             "balances": normalized_balances,
             "positions": normalized_positions,
             "open_orders": normalized_open_orders,
             "recent_orders": normalized_recent_orders,
             "last_updated_at": int(time.time()),
+            "last_balance_update_timestamp": int(time.time()),
             "diagnostic": diagnostic,
             "warning": "IP Whitelist or Auth Issue: verify demo credentials" if not is_auth else None,
             "disclaimer": "TESTNET DEMO ONLY: All balances, positions, and orders represent simulated testnet funds. Live automated trading is disabled.",

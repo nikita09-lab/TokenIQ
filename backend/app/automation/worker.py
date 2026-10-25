@@ -12,6 +12,7 @@ from app.automation.models import (
     AutomationStatusResponse,
     PositionLifecycleState,
     PositionStateRecord,
+    SignalLifecycleState,
 )
 from app.automation.position_manager import position_manager
 from app.automation.strategy_runner import strategy_runner
@@ -59,6 +60,8 @@ class AutomatedTradingWorker:
         self._last_market_data_update_at: Optional[int] = None
         self._last_reconciliation_at: Optional[int] = None
         self._last_candle_timestamp: Optional[int] = None
+        self._heartbeat_at: Optional[int] = None
+        self._cached_overview: Optional[Dict[str, Any]] = None
 
     @property
     def state(self) -> AutomationState:
@@ -207,6 +210,7 @@ class AutomatedTradingWorker:
         """
         logger.info("Starting automated evaluation loop...")
         while self._state in (AutomationState.RUNNING, AutomationState.PAUSED):
+            self._heartbeat_at = int(time.time())
             try:
                 await self._cycle_step()
             except asyncio.CancelledError:
@@ -277,13 +281,22 @@ class AutomatedTradingWorker:
             logger.debug("New entries are paused; skipping signal generation.")
             return
 
-        # 6. Evaluate Strategy
+        # 6. Fetch Available Margin and Evaluate Strategy
+        available_margin_usd = None
+        try:
+            overview = await delta_client.get_account_overview()
+            available_margin_usd = float(overview.get("available_balance_usd") or 0.0)
+            self._cached_overview = overview
+        except Exception as exc:
+            logger.warning(f"Could not retrieve testnet account overview in worker cycle: {exc}")
+
         signal = strategy_runner.evaluate_candles(
             config=config,
             product_meta=meta,
             candles=candles,
             current_position_side=pos_record.side,
             current_position_size=pos_record.quantity,
+            available_margin_usd=available_margin_usd,
         )
 
         if not signal:
@@ -293,6 +306,10 @@ class AutomatedTradingWorker:
         registered = await signal_deduplicator.register_signal(signal)
         if not registered:
             # Duplicate signal
+            return
+
+        if signal.lifecycle_state == SignalLifecycleState.REJECTED:
+            logger.info(f"Signal rejected: {signal.rejection_reason}")
             return
 
         logger.info(
@@ -349,6 +366,18 @@ class AutomatedTradingWorker:
         # Calculate current exposure
         current_exp = pos.quantity * pos.average_entry_price * 0.001  # approx for BTC
 
+        # Query testnet account overview for live balances
+        wallet_balance = None
+        avail_margin = None
+        equity = None
+        try:
+            overview = await delta_client.get_account_overview()
+            wallet_balance = overview.get("total_balance_usd")
+            avail_margin = overview.get("available_balance_usd")
+            equity = overview.get("account_equity_usd")
+        except Exception as exc:
+            logger.warning(f"Could not fetch account overview in get_status: {exc}")
+
         return AutomationStatusResponse(
             state=self._state,
             enabled=config.enabled,
@@ -363,13 +392,20 @@ class AutomatedTradingWorker:
             latest_signal_rejection_reason=latest_sig.rejection_reason if latest_sig else None,
             latest_order_status=latest_order.state if latest_order else None,
             orders_submitted_today=safety.orders_submitted_today,
+            trades_completed_today=0,
             daily_realized_pnl_usd=pos.realized_pnl_usd,
             current_exposure_usd=round(current_exp, 2),
             last_candle_timestamp=self._last_candle_timestamp,
             last_market_data_update_at=self._last_market_data_update_at,
             last_reconciliation_at=self._last_reconciliation_at,
+            last_reconciliation_result="SUCCESS" if self._last_reconciliation_at else None,
             last_error=self._last_error,
             worker_uptime_seconds=uptime,
+            wallet_balance_usd=wallet_balance,
+            available_margin_usd=avail_margin,
+            account_equity_usd=equity,
+            daily_loss_limit_usd=config.maximum_daily_realized_loss,
+            worker_heartbeat_at=self._heartbeat_at or int(time.time()),
         )
 
 

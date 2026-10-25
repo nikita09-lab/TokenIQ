@@ -96,17 +96,17 @@ class AutomationConfig(BaseModel):
         description="Target notional value in USD when using fixed_notional mode",
     )
     risk_budget_usd: float = Field(
-        default=25.0,
+        default=4.0,
         gt=0,
         description="Maximum risk amount in USD per trade for risk_budget sizing",
     )
     maximum_order_notional: float = Field(
-        default=500.0,
+        default=20.0,
         gt=0,
         description="Maximum allowed notional exposure per order in USD",
     )
     maximum_position_size: float = Field(
-        default=10.0,
+        default=1.0,
         gt=0,
         description="Maximum allowed position size in contracts",
     )
@@ -117,7 +117,7 @@ class AutomationConfig(BaseModel):
         description="Maximum simultaneous open positions allowed in automation",
     )
     maximum_daily_realized_loss: float = Field(
-        default=100.0,
+        default=4.0,
         gt=0,
         description="Daily realized loss limit in USD triggering automated pause",
     )
@@ -268,8 +268,14 @@ class AutomationStatusResponse(BaseModel):
     last_candle_timestamp: Optional[int] = None
     last_market_data_update_at: Optional[int] = None
     last_reconciliation_at: Optional[int] = None
+    last_reconciliation_result: Optional[str] = None
     last_error: Optional[str] = None
     worker_uptime_seconds: int = 0
+    wallet_balance_usd: Optional[float] = None
+    available_margin_usd: Optional[float] = None
+    account_equity_usd: Optional[float] = None
+    daily_loss_limit_usd: Optional[float] = 4.0
+    worker_heartbeat_at: Optional[int] = None
     disclaimer: str = (
         "AUTOMATED TESTNET TRADING: Operates strictly on Delta Exchange India Testnet. "
         "Production real-money trading is technically impossible. "

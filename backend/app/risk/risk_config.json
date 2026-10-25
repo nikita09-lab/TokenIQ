@@ -1,7 +1,7 @@
 {
-  "max_order_notional_usd": 500.0,
-  "max_position_size": 10.0,
-  "max_daily_realized_loss_usd": 100.0,
+  "max_order_notional_usd": 20.0,
+  "max_position_size": 1.0,
+  "max_daily_realized_loss_usd": 4.0,
   "max_orders_per_day": 20,
   "max_concurrent_positions": 1,
   "min_stop_loss_distance_pct": 0.5,

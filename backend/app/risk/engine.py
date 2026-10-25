@@ -594,6 +594,53 @@ class RiskEngine:
             ))
 
         # --------------------------------------------------------------------
+        # Rule 11: Available Balance & Margin Verification
+        # --------------------------------------------------------------------
+        if account_telemetry is not None:
+            avail_bal = float(account_telemetry.get("available_balance_usd") or 0.0)
+            if avail_bal <= 0 and "balances" in account_telemetry:
+                for b in account_telemetry.get("balances") or []:
+                    sym = str(b.get("asset_symbol") or "").upper()
+                    if sym in ("USD", "USDT", "USDC"):
+                        avail_bal += float(b.get("available_balance") or 0.0)
+
+            intent_upper = (request.position_intent or "").upper()
+            is_entry = "OPEN" in intent_upper or ("CLOSE" not in intent_upper and request.side.upper() in ("BUY", "SELL"))
+
+            if is_entry:
+                if avail_bal <= 0:
+                    msg = f"Insufficient funds: Available balance is ${avail_bal:,.2f} USD. Cannot open new position."
+                    rules.append(RuleEvaluationResult(
+                        rule_name="available_margin",
+                        status=CheckStatus.FAILED,
+                        message=msg,
+                        details={"available_balance_usd": avail_bal},
+                    ))
+                    reasons.append(msg)
+                else:
+                    # Require at least 10% margin coverage buffer (conservative 10x max leverage equivalent)
+                    required_margin = proposed_notional_usd * 0.10
+                    if required_margin > avail_bal:
+                        msg = (
+                            f"Insufficient available margin: Order requires estimated margin of "
+                            f"${required_margin:,.2f} USD, but available balance is only ${avail_bal:,.2f} USD."
+                        )
+                        rules.append(RuleEvaluationResult(
+                            rule_name="available_margin",
+                            status=CheckStatus.FAILED,
+                            message=msg,
+                            details={"required_margin_usd": required_margin, "available_balance_usd": avail_bal},
+                        ))
+                        reasons.append(msg)
+                    else:
+                        rules.append(RuleEvaluationResult(
+                            rule_name="available_margin",
+                            status=CheckStatus.PASSED,
+                            message=f"Available margin verified (${avail_bal:,.2f} USD available >= ${required_margin:,.2f} required).",
+                            details={"available_balance_usd": avail_bal, "required_margin_usd": required_margin},
+                        ))
+
+        # --------------------------------------------------------------------
         # Final Decision
         # --------------------------------------------------------------------
         approved = len(reasons) == 0

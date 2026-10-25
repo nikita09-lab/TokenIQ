@@ -169,10 +169,17 @@ class WebSocketManager:
         # Yield to allow FastAPI and Uvicorn to finish startup banner first
         await asyncio.sleep(0.3)
 
-        upstream_urls = [
-            settings.DELTA_WS_URL,
-            "wss://socket.india.delta.exchange",
-        ]
+        if settings.is_testnet:
+            upstream_urls = [
+                settings.DELTA_WS_URL,
+                "wss://socket.testnet.deltaex.org",
+                "wss://testnet-socket.delta.exchange",
+            ]
+        else:
+            upstream_urls = [
+                settings.DELTA_WS_URL,
+                "wss://socket.india.delta.exchange",
+            ]
         # Deduplicate while preserving order
         upstream_urls = list(dict.fromkeys(upstream_urls))
 

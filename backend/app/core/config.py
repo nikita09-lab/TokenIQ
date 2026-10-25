@@ -1,8 +1,13 @@
 import os
+from pathlib import Path
 from typing import List, Optional
 from dotenv import load_dotenv
 
+# Load .env from current directory or fallback to backend/.env
 load_dotenv()
+_backend_env = Path(__file__).resolve().parent.parent.parent / ".env"
+if _backend_env.exists():
+    load_dotenv(_backend_env)
 
 DEFAULT_PRODUCTION_ORIGINS: List[str] = [
     "https://token-iq.vercel.app",
@@ -110,7 +115,8 @@ class Settings:
 
     @property
     def DELTA_WS_URL(self) -> str:
-        return os.getenv("DELTA_WS_URL", "wss://public-socket.india.delta.exchange").strip()
+        default_ws = "wss://socket.testnet.deltaex.org" if self.is_testnet else "wss://socket.india.delta.exchange"
+        return os.getenv("DELTA_WS_URL", default_ws).strip()
 
     @property
     def DELTA_API_KEY(self) -> str:
