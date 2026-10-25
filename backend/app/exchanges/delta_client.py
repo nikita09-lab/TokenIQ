@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -500,7 +501,7 @@ class DeltaExchangeClient:
         now = time.time()
         if not force_refresh and self._account_overview_cache:
             cache_data, cache_time = self._account_overview_cache
-            if (now - cache_time) < 2.5:
+            if (now - cache_time) < 6.0:
                 return cache_data
 
         masked = (
@@ -550,23 +551,23 @@ class DeltaExchangeClient:
             logger.warning(f"Account balances query failed: {diag}")
 
         if is_auth:
-            # 2. Fetch Positions
-            try:
-                positions_raw = await self.get_positions()
-            except Exception as exc:
-                logger.warning(f"Account positions query failed: {exc}")
-
-            # 3. Fetch Open Orders
-            try:
-                open_orders_raw = await self.get_open_orders()
-            except Exception as exc:
-                logger.warning(f"Account open orders query failed: {exc}")
-
-            # 4. Fetch Order History
-            try:
-                history_raw = await self.get_order_history(page_size=20)
-            except Exception as exc:
-                logger.warning(f"Account order history query failed: {exc}")
+            # 2, 3, 4. Concurrently fetch positions, open orders, and recent order history
+            pos_task = self.get_positions()
+            orders_task = self.get_open_orders()
+            history_task = self.get_order_history(page_size=20)
+            res = await asyncio.gather(pos_task, orders_task, history_task, return_exceptions=True)
+            if not isinstance(res[0], Exception):
+                positions_raw = res[0]
+            else:
+                logger.warning(f"Account positions query failed: {res[0]}")
+            if not isinstance(res[1], Exception):
+                open_orders_raw = res[1]
+            else:
+                logger.warning(f"Account open orders query failed: {res[1]}")
+            if not isinstance(res[2], Exception):
+                history_raw = res[2]
+            else:
+                logger.warning(f"Account order history query failed: {res[2]}")
 
         # Normalize balances
         normalized_balances = []

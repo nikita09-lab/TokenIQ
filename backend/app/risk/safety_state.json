@@ -1,0 +1,12 @@
+{
+  "trading_enabled": true,
+  "kill_switch_engaged": false,
+  "kill_switch_reason": null,
+  "kill_switch_activated_at": 1792927825,
+  "last_reset_at": 1792928525,
+  "last_reset_reason": "Operator deliberate testnet activation",
+  "daily_date": "2026-10-25",
+  "orders_submitted_today": 0,
+  "evaluations_today": 0,
+  "evaluated_signal_ids": {}
+}
