@@ -91,6 +91,7 @@ class BacktestService:
         return {
             "supported_resolutions": ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"],
             "default_resolution": "1h",
+            "default_lookback_days": 90,
             "default_initial_capital": 10000.0,
             "default_fee_rate": 0.0005,  # 0.05%
             "default_slippage_rate": 0.0005,  # 0.05%
@@ -107,6 +108,10 @@ class BacktestService:
                 },
             ],
             "default_strategy_params": strategy.parameters if strategy else {},
+            "strategy_presets": {
+                "9/11/20": {"fast_period": 9, "middle_period": 11, "slow_period": 20, "rsi_filter_enabled": False},
+                "8/13/21": {"fast_period": 8, "middle_period": 13, "slow_period": 21, "rsi_filter_enabled": False},
+            },
             "strategy_parameters_schema": schema.get("parameters", {}),
             "disclaimer": (
                 "DISCLAIMER: TokenIQ backtesting is purely analytical and does not constitute financial advice. "

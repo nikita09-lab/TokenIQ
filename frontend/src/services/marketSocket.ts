@@ -39,10 +39,18 @@ class MarketSocketService {
   private reconnectListeners = new Set<ReconnectListener>();
 
   private getSocketUrl(): string {
+    const configuredApiBase = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL?.trim();
+    if (configuredApiBase) {
+      const backendUrl = new URL(configuredApiBase);
+      backendUrl.protocol = backendUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+      backendUrl.pathname = '/api/v1/market/ws';
+      backendUrl.search = '';
+      backendUrl.hash = '';
+      return backendUrl.toString();
+    }
     if (typeof window !== 'undefined') {
-      const isSecure = window.location.protocol === 'https:';
-      const wsProtocol = isSecure ? 'wss:' : 'ws:';
-      // In dev with Vite proxy, /api/v1/market/ws is proxied to ws://localhost:8000
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      // In local development, Vite proxies this socket to the backend.
       return `${wsProtocol}//${window.location.host}/api/v1/market/ws`;
     }
     return 'ws://localhost:8000/api/v1/market/ws';

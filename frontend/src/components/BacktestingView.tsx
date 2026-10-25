@@ -53,7 +53,7 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
   // Form parameters
   const [symbol, setSymbol] = useState<string>(initialSymbol);
   const [resolution, setResolution] = useState<string>('1h');
-  const [rangeDays, setRangeDays] = useState<number>(30);
+  const [rangeDays, setRangeDays] = useState<number>(90);
   const [initialCapital, setInitialCapital] = useState<number>(10000);
   const [feePercent, setFeePercent] = useState<number>(0.05); // 0.05%
   const [slippagePercent, setSlippagePercent] = useState<number>(0.05); // 0.05%
@@ -62,9 +62,10 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
   // Strategy Parameters
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const [fastPeriod, setFastPeriod] = useState<number>(9);
-  const [slowPeriod, setSlowPeriod] = useState<number>(21);
-  const [rsiPeriod, setRsiPeriod] = useState<number>(14);
-  const [rsiFilterEnabled, setRsiFilterEnabled] = useState<boolean>(true);
+  const [middlePeriod, setMiddlePeriod] = useState<number>(11);
+  const [slowPeriod, setSlowPeriod] = useState<number>(20);
+  const [rsiPeriod] = useState<number>(14);
+  const rsiFilterEnabled = false;
   const [rsiBuyMin, setRsiBuyMin] = useState<number>(40.0);
   const [rsiOverbought, setRsiOverbought] = useState<number>(70.0);
   const [rsiSellMax, setRsiSellMax] = useState<number>(60.0);
@@ -76,6 +77,8 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BacktestResultData | null>(null);
+  const [comparisonResults, setComparisonResults] = useState<BacktestResultData[]>([]);
+  const [isComparing, setIsComparing] = useState<boolean>(false);
 
   // Selected trade filter in history table
   const [tradeFilter, setTradeFilter] = useState<'ALL' | 'WIN' | 'LOSS'>('ALL');
@@ -98,9 +101,10 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
       execution_mode: executionMode,
       strategy_params: {
         fast_period: Number(fastPeriod),
+        middle_period: Number(middlePeriod),
         slow_period: Number(slowPeriod),
         rsi_period: Number(rsiPeriod),
-        rsi_filter_enabled: Boolean(rsiFilterEnabled),
+        rsi_filter_enabled: false,
         rsi_buy_min: Number(rsiBuyMin),
         rsi_overbought: Number(rsiOverbought),
         rsi_sell_max: Number(rsiSellMax),
@@ -119,6 +123,34 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
       setError(msg || 'Backtest failed to execute.');
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const handleComparePresets = async () => {
+    setIsComparing(true);
+    setError(null);
+    const now = Math.floor(Date.now() / 1000);
+    const common = {
+      symbol: symbol.trim().toUpperCase(),
+      resolution,
+      start_time: now - rangeDays * 86400,
+      end_time: now,
+      initial_capital: Number(initialCapital),
+      fee_rate: Number(feePercent) / 100.0,
+      slippage_rate: Number(slippagePercent) / 100.0,
+      execution_mode: executionMode,
+      strategy_params: { rsi_filter_enabled: false, sell_intent: 'CLOSE_LONG' },
+    } as const;
+    try {
+      const first = await runBacktest({ ...common, strategy_params: { ...common.strategy_params, fast_period: 9, middle_period: 11, slow_period: 20 } });
+      const second = await runBacktest({ ...common, strategy_params: { ...common.strategy_params, fast_period: 8, middle_period: 13, slow_period: 21 } });
+      setComparisonResults([first, second]);
+      setResult(first);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || 'Preset comparison failed.');
+    } finally {
+      setIsComparing(false);
     }
   };
 
@@ -206,7 +238,7 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Simulate the baseline EMA Crossover (9/21) + RSI strategy over real Delta Exchange historical bars.
+            Simulate one Triple EMA strategy (9/11/20 or 8/13/21) on historical Delta Exchange candles. RSI filtering is off.
             Next-candle execution strictly prevents look-ahead bias.
           </p>
         </div>
@@ -231,6 +263,13 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
               <span>Run Backtest</span>
             </>
           )}
+        </button>
+        <button
+          onClick={handleComparePresets}
+          disabled={isRunning || isComparing}
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-xs border border-violet-400/30 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20 disabled:opacity-50"
+        >
+          {isComparing ? 'Comparing presets…' : 'Compare 9/11/20 vs 8/13/21'}
         </button>
       </div>
 
@@ -286,12 +325,14 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
             <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase tracking-wider">
               Lookback Range
             </label>
-            <div className="grid grid-cols-4 gap-1 bg-[#121824] p-1 border border-white/[0.1] rounded-lg">
+            <div className="grid grid-cols-6 gap-1 bg-[#121824] p-1 border border-white/[0.1] rounded-lg">
               {[
                 { days: 7, label: '7D' },
                 { days: 30, label: '30D' },
                 { days: 60, label: '60D' },
                 { days: 90, label: '90D' },
+                { days: 180, label: '180D' },
+                { days: 365, label: '1Y' },
               ].map((preset) => (
                 <button
                   key={preset.days}
@@ -389,86 +430,29 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
             className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 font-mono transition-colors"
           >
             {showAdvanced ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            <span>{showAdvanced ? 'Hide Strategy Parameters' : 'Customize EMA & RSI Parameters (9/21, RSI 14)'}</span>
+            <span>{showAdvanced ? 'Hide Strategy Parameters' : 'Triple EMA Presets (RSI filter off)'}</span>
           </button>
 
           {showAdvanced && (
-            <div className="mt-4 p-4 rounded-lg bg-[#0E131E] border border-white/[0.06] grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in duration-200">
+            <div className="mt-4 p-4 rounded-lg bg-[#0E131E] border border-white/[0.06] space-y-4 animate-in fade-in duration-200">
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => { setFastPeriod(9); setMiddlePeriod(11); setSlowPeriod(20); }} className={`px-3 py-1.5 rounded text-xs font-mono border ${fastPeriod === 9 && middlePeriod === 11 && slowPeriod === 20 ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-slate-800 text-slate-300 border-white/10'}`}>EMA 9 / 11 / 20</button>
+                <button type="button" onClick={() => { setFastPeriod(8); setMiddlePeriod(13); setSlowPeriod(21); }} className={`px-3 py-1.5 rounded text-xs font-mono border ${fastPeriod === 8 && middlePeriod === 13 && slowPeriod === 21 ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-slate-800 text-slate-300 border-white/10'}`}>EMA 8 / 13 / 21</button>
+                <span className="px-3 py-1.5 rounded text-xs font-mono text-slate-400 bg-slate-900 border border-white/10">RSI filter OFF</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-[10px] font-mono text-slate-400 mb-1">Fast EMA Period</label>
-                <input
-                  type="number"
-                  min="2"
-                  max="100"
-                  value={fastPeriod}
-                  onChange={(e) => setFastPeriod(Number(e.target.value))}
-                  className="w-full bg-[#161D2B] border border-white/[0.1] rounded px-2.5 py-1.5 text-xs text-white font-mono"
-                />
+                <input type="number" min="2" max="100" value={fastPeriod} onChange={(e) => setFastPeriod(Number(e.target.value))} className="w-full bg-[#161D2B] border border-white/[0.1] rounded px-2.5 py-1.5 text-xs text-white font-mono" />
               </div>
-
+              <div>
+                <label className="block text-[10px] font-mono text-slate-400 mb-1">Middle EMA Period</label>
+                <input type="number" min="3" max="200" value={middlePeriod} onChange={(e) => setMiddlePeriod(Number(e.target.value))} className="w-full bg-[#161D2B] border border-white/[0.1] rounded px-2.5 py-1.5 text-xs text-white font-mono" />
+              </div>
               <div>
                 <label className="block text-[10px] font-mono text-slate-400 mb-1">Slow EMA Period</label>
-                <input
-                  type="number"
-                  min="3"
-                  max="300"
-                  value={slowPeriod}
-                  onChange={(e) => setSlowPeriod(Number(e.target.value))}
-                  className="w-full bg-[#161D2B] border border-white/[0.1] rounded px-2.5 py-1.5 text-xs text-white font-mono"
-                />
+                <input type="number" min="4" max="300" value={slowPeriod} onChange={(e) => setSlowPeriod(Number(e.target.value))} className="w-full bg-[#161D2B] border border-white/[0.1] rounded px-2.5 py-1.5 text-xs text-white font-mono" />
               </div>
-
-              <div>
-                <label className="block text-[10px] font-mono text-slate-400 mb-1">RSI Period</label>
-                <input
-                  type="number"
-                  min="2"
-                  max="50"
-                  value={rsiPeriod}
-                  onChange={(e) => setRsiPeriod(Number(e.target.value))}
-                  className="w-full bg-[#161D2B] border border-white/[0.1] rounded px-2.5 py-1.5 text-xs text-white font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-mono text-slate-400 mb-1">RSI Filter Enabled</label>
-                <button
-                  type="button"
-                  onClick={() => setRsiFilterEnabled(!rsiFilterEnabled)}
-                  className={`w-full py-1.5 px-3 rounded text-xs font-mono font-semibold transition-colors border ${
-                    rsiFilterEnabled
-                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                      : 'bg-slate-800 text-slate-400 border-white/[0.1]'
-                  }`}
-                >
-                  {rsiFilterEnabled ? 'Enabled' : 'Disabled'}
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-mono text-slate-400 mb-1">RSI Buy Min (Momentum)</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={rsiBuyMin}
-                  onChange={(e) => setRsiBuyMin(Number(e.target.value))}
-                  className="w-full bg-[#161D2B] border border-white/[0.1] rounded px-2.5 py-1.5 text-xs text-white font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-mono text-slate-400 mb-1">RSI Overbought (Max Buy)</label>
-                <input
-                  type="number"
-                  min="50"
-                  max="100"
-                  value={rsiOverbought}
-                  onChange={(e) => setRsiOverbought(Number(e.target.value))}
-                  className="w-full bg-[#161D2B] border border-white/[0.1] rounded px-2.5 py-1.5 text-xs text-white font-mono"
-                />
-              </div>
-
               <div>
                 <label className="block text-[10px] font-mono text-slate-400 mb-1">Volume Confirmation</label>
                 <button
@@ -495,10 +479,27 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
                   className="w-full bg-[#161D2B] border border-white/[0.1] rounded px-2.5 py-1.5 text-xs text-white font-mono"
                 />
               </div>
+              </div>
             </div>
           )}
         </div>
       </div>
+
+      {comparisonResults.length === 2 && (
+        <div className="bg-[#0B0F17] border border-violet-400/20 rounded-xl p-5 space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Triple EMA Preset Comparison</h3>
+            <p className="text-xs text-slate-400 mt-1">Same symbol, candle interval, dates, starting capital, fees and slippage. These are historical simulations, not profit guarantees.</p>
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-white/[0.06]">
+            <table className="w-full text-left text-xs font-mono">
+              <thead className="bg-[#0F1420] text-slate-400"><tr><th className="p-3">Preset</th><th className="p-3 text-right">Net P&L</th><th className="p-3 text-right">Return</th><th className="p-3 text-right">Trades</th><th className="p-3 text-right">Win Rate</th><th className="p-3 text-right">Max Drawdown</th><th className="p-3 text-right">Profit Factor</th></tr></thead>
+              <tbody>{comparisonResults.map((item, index) => <tr key={item.backtest_id} className="border-t border-white/[0.06]"><td className="p-3 text-white">{index === 0 ? 'EMA 9 / 11 / 20' : 'EMA 8 / 13 / 21'}</td><td className={`p-3 text-right ${item.metrics.net_profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{item.metrics.net_profit >= 0 ? '+' : ''}${item.metrics.net_profit.toFixed(2)}</td><td className={`p-3 text-right ${item.metrics.net_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{item.metrics.net_return_pct.toFixed(2)}%</td><td className="p-3 text-right text-slate-200">{item.metrics.total_trades}</td><td className="p-3 text-right text-slate-200">{item.metrics.win_rate_pct.toFixed(1)}%</td><td className="p-3 text-right text-rose-300">-{item.metrics.max_drawdown_pct.toFixed(2)}%</td><td className="p-3 text-right text-slate-200">{item.metrics.profit_factor == null ? 'N/A' : item.metrics.profit_factor.toFixed(2)}</td></tr>)}</tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-slate-500">The equity chart below shows EMA 9/11/20. Click Run Backtest after choosing the other preset if you want its individual equity curve.</p>
+        </div>
+      )}
 
       {/* Error Banner */}
       {error && (
@@ -686,8 +687,8 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
                 >
                   <defs>
                     <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.25" />
-                      <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.0" />
+                      <stop offset="0%" stopColor={result.metrics.net_return_pct >= 0 ? '#10b981' : '#f43f5e'} stopOpacity="0.25" />
+                      <stop offset="100%" stopColor={result.metrics.net_return_pct >= 0 ? '#10b981' : '#f43f5e'} stopOpacity="0.0" />
                     </linearGradient>
                   </defs>
 
@@ -709,7 +710,7 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
                   <path
                     d={chartData.pathD}
                     fill="none"
-                    stroke="#22d3ee"
+                    stroke={result.metrics.net_return_pct >= 0 ? '#34d399' : '#fb7185'}
                     strokeWidth="1.8"
                     strokeLinecap="round"
                     strokeLinejoin="round"

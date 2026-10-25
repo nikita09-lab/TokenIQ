@@ -6,9 +6,11 @@ import type {
   MarketTicker,
 } from '../types/market';
 
-// Base API paths (Vite dev proxy forwards /api -> http://localhost:8000)
-const API_V1_BASE = '/api/v1';
-const FALLBACK_V1_BASE = 'http://127.0.0.1:8000/api/v1';
+// Set VITE_API_BASE_URL in Vercel to the deployed backend origin (e.g. https://api.example.com).
+// Leave unset for local development, where Vite proxies /api to localhost:8000.
+const configuredApiBase = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_API_BASE_URL?.trim();
+const API_V1_BASE = configuredApiBase ? `${configuredApiBase.replace(/\/$/, '')}/api/v1` : '/api/v1';
+const FALLBACK_V1_BASE = configuredApiBase ? API_V1_BASE : 'http://127.0.0.1:8000/api/v1';
 
 export class ApiClientError extends Error {
   status: number;

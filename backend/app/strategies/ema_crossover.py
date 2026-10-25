@@ -22,13 +22,10 @@ class InvalidCandleDataError(ValueError):
 
 class EMACrossoverStrategy(BaseStrategy):
     """
-    Baseline Exponential Moving Average (EMA) Crossover Strategy with RSI and Volume filters.
-    
-    Logic:
-    - Fast EMA (default 9 periods) vs Slow EMA (default 21 periods).
-    - Golden Cross: Fast EMA crosses above Slow EMA -> BUY (OPEN_LONG).
-    - Death Cross: Fast EMA crosses below Slow EMA -> SELL (CLOSE_LONG or OPEN_SHORT).
-    - RSI Filter (default 14 periods):
+    Triple Exponential Moving Average (EMA) crossover strategy with optional volume confirmation.
+
+    Default trend stack is EMA 9 / EMA 11 / EMA 20. RSI filtering is disabled by default.
+    Signals are evaluated strictly on completed candles.
         * For BUY: momentum must be present (RSI >= rsi_buy_min) and not overbought (RSI <= rsi_overbought).
         * For SELL: downward momentum (RSI <= rsi_sell_max) and not oversold (RSI >= rsi_oversold).
     - Volume Filter (optional):
@@ -38,9 +35,10 @@ class EMACrossoverStrategy(BaseStrategy):
 
     DEFAULT_PARAMETERS = {
         "fast_period": 9,
-        "slow_period": 21,
+        "middle_period": 11,
+        "slow_period": 20,
         "rsi_period": 14,
-        "rsi_filter_enabled": True,
+        "rsi_filter_enabled": False,
         "rsi_buy_min": 40.0,
         "rsi_overbought": 70.0,
         "rsi_sell_max": 60.0,
@@ -53,15 +51,16 @@ class EMACrossoverStrategy(BaseStrategy):
     def __init__(
         self,
         strategy_id: str = "ema_crossover",
-        name: str = "EMA Crossover (9/21) + RSI Filter",
+        name: str = "Triple EMA Crossover (9/11/20)",
         description: str = (
-            "Baseline trend-following strategy using 9 and 21 EMA crossovers, "
-            "filtered by 14-period RSI and optional volume moving average."
+            "Triple EMA trend-following strategy using 9/11/20 defaults; RSI filter is off by default."
         ),
         custom_params: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(strategy_id, name, description)
         self.parameters = dict(self.DEFAULT_PARAMETERS)
+        # Preserve the previous two-EMA behavior for older API clients that do not send middle_period.
+        self._legacy_two_ema = bool(custom_params and "middle_period" not in custom_params)
         if custom_params:
             self.configure(custom_params)
 
@@ -79,12 +78,20 @@ class EMACrossoverStrategy(BaseStrategy):
                     "description": "Period for Fast Exponential Moving Average",
                     "current": self.parameters["fast_period"],
                 },
+                "middle_period": {
+                    "type": "integer",
+                    "default": 11,
+                    "min": 3,
+                    "max": 300,
+                    "description": "Period for Middle Exponential Moving Average (must be between fast and slow)",
+                    "current": self.parameters["middle_period"],
+                },
                 "slow_period": {
                     "type": "integer",
-                    "default": 21,
-                    "min": 3,
+                    "default": 20,
+                    "min": 4,
                     "max": 500,
-                    "description": "Period for Slow Exponential Moving Average (must be > fast_period)",
+                    "description": "Period for Slow Exponential Moving Average (must be > middle_period)",
                     "current": self.parameters["slow_period"],
                 },
                 "rsi_period": {
@@ -97,8 +104,8 @@ class EMACrossoverStrategy(BaseStrategy):
                 },
                 "rsi_filter_enabled": {
                     "type": "boolean",
-                    "default": True,
-                    "description": "Whether to filter crossover signals using RSI levels",
+                    "default": False,
+                    "description": "Optional RSI filter; disabled by default for the triple-EMA strategy",
                     "current": self.parameters["rsi_filter_enabled"],
                 },
                 "rsi_buy_min": {
@@ -170,17 +177,29 @@ class EMACrossoverStrategy(BaseStrategy):
                 raise ValueError("fast_period must be >= 2")
             validated["fast_period"] = val
 
+        if "middle_period" in params:
+            val = int(params["middle_period"])
+            if val < 3:
+                raise ValueError("middle_period must be >= 3")
+            validated["middle_period"] = val
+
         if "slow_period" in params:
             val = int(params["slow_period"])
-            if val < 3:
-                raise ValueError("slow_period must be >= 3")
+            if val < 4:
+                raise ValueError("slow_period must be >= 4")
             validated["slow_period"] = val
 
         if validated["fast_period"] >= validated["slow_period"]:
             raise ValueError(
-                f"fast_period ({validated['fast_period']}) must be strictly less than "
-                f"slow_period ({validated['slow_period']})"
+                f"fast_period ({validated['fast_period']}) must be strictly less than slow_period ({validated['slow_period']})"
             )
+        # Backwards-compatible customizations that only set fast/slow still get a valid middle EMA.
+        if "middle_period" not in params and not (validated["fast_period"] < validated["middle_period"] < validated["slow_period"]):
+            if validated["slow_period"] - validated["fast_period"] < 2:
+                raise ValueError("EMA periods must leave room for a middle_period between fast and slow")
+            validated["middle_period"] = (validated["fast_period"] + validated["slow_period"]) // 2
+        if not (validated["fast_period"] < validated["middle_period"] < validated["slow_period"]):
+            raise ValueError("EMA periods must satisfy fast_period < middle_period < slow_period")
 
         if "rsi_period" in params:
             val = int(params["rsi_period"])
@@ -302,15 +321,15 @@ class EMACrossoverStrategy(BaseStrategy):
 
         min_required = max(
             self.parameters["slow_period"],
-            self.parameters["rsi_period"],
+            self.parameters["rsi_period"] if self.parameters["rsi_filter_enabled"] else 0,
             self.parameters["volume_ma_period"] if self.parameters["volume_confirmation_enabled"] else 0,
         ) + 2
 
         if len(eval_candles) < min_required:
             raise InsufficientDataError(
                 f"Insufficient completed candles for {sym}. Received {len(eval_candles)} completed bars, "
-                f"but strategy requires at least {min_required} bars for {self.parameters['slow_period']}-period EMA "
-                f"and {self.parameters['rsi_period']}-period RSI."
+                f"but strategy requires at least {min_required} bars for the EMA stack "
+                f"({self.parameters['fast_period']}/{self.parameters['middle_period']}/{self.parameters['slow_period']})."
             )
 
         # Convert to DataFrame
@@ -345,11 +364,13 @@ class EMACrossoverStrategy(BaseStrategy):
 
         # Compute technical indicators
         fast_p = self.parameters["fast_period"]
+        middle_p = self.parameters["middle_period"]
         slow_p = self.parameters["slow_period"]
         rsi_p = self.parameters["rsi_period"]
         vol_p = self.parameters["volume_ma_period"]
 
         df["fast_ema"] = calculate_ema(df["close"], fast_p)
+        df["middle_ema"] = calculate_ema(df["close"], middle_p)
         df["slow_ema"] = calculate_ema(df["close"], slow_p)
         df["rsi"] = calculate_rsi(df["close"], rsi_p)
 
@@ -365,23 +386,27 @@ class EMACrossoverStrategy(BaseStrategy):
         curr_time = int(curr["time"])
         curr_close = float(curr["close"])
         curr_fast = float(curr["fast_ema"])
+        curr_middle = float(curr["middle_ema"])
         curr_slow = float(curr["slow_ema"])
         curr_rsi = float(curr["rsi"]) if not np.isnan(curr["rsi"]) else None
         curr_vol = float(curr["volume"]) if not np.isnan(curr["volume"]) else None
         curr_vol_ma = float(curr["volume_ma"]) if not np.isnan(curr["volume_ma"]) else None
 
         prev_fast = float(prev["fast_ema"])
+        prev_middle = float(prev["middle_ema"])
         prev_slow = float(prev["slow_ema"])
 
         # Check for repeated evaluation on the exact same completed candle
         last_eval_time = self._last_evaluated_candle.get(sym)
         is_repeated = (last_eval_time is not None and last_eval_time == curr_time)
 
-        # Detect crossover:
-        # Bullish: previous fast <= slow, current fast > slow
-        # Bearish: previous fast >= slow, current fast < slow
-        bullish_crossover = (prev_fast <= prev_slow) and (curr_fast > curr_slow)
-        bearish_crossover = (prev_fast >= prev_slow) and (curr_fast < curr_slow)
+        # Triple-EMA confirmation: fast crosses middle while the middle/slow trend stack agrees.
+        if self._legacy_two_ema:
+            bullish_crossover = (prev_fast <= prev_slow) and (curr_fast > curr_slow)
+            bearish_crossover = (prev_fast >= prev_slow) and (curr_fast < curr_slow)
+        else:
+            bullish_crossover = (prev_fast <= prev_middle) and (curr_fast > curr_middle) and (curr_middle > curr_slow)
+            bearish_crossover = (prev_fast >= prev_middle) and (curr_fast < curr_middle) and (curr_middle < curr_slow)
 
         signal_type = SignalType.HOLD
         position_intent = PositionIntent.NO_ACTION
@@ -405,8 +430,7 @@ class EMACrossoverStrategy(BaseStrategy):
             explanation = (
                 f"HOLD (Repeated): Completed candle at timestamp {curr_time} was already evaluated. "
                 f"No new completed {resolution} bar has closed yet. "
-                f"Fast EMA ({curr_fast:.2f}) is {'above' if curr_fast >= curr_slow else 'below'} "
-                f"Slow EMA ({curr_slow:.2f})."
+                f"Triple EMA stack: fast {curr_fast:.2f}, middle {curr_middle:.2f}, slow {curr_slow:.2f}."
             )
         elif bullish_crossover:
             # Check RSI filter for BUY
@@ -433,8 +457,8 @@ class EMACrossoverStrategy(BaseStrategy):
                 position_intent = PositionIntent.OPEN_LONG
                 explanation = (
                     f"BUY (OPEN_LONG): Bullish Golden Cross detected on completed candle. "
-                    f"Fast EMA {fast_p} ({curr_fast:.2f}) crossed above Slow EMA {slow_p} ({curr_slow:.2f}). "
-                    f"RSI is healthy at {curr_rsi:.1f} (between {rsi_buy_min} and {rsi_overbought})."
+                    f"Fast EMA {fast_p} crossed above Middle EMA {self.parameters['middle_period']} with the Middle EMA above Slow EMA {slow_p}. "
+                    + (f"RSI confirmation: {curr_rsi:.1f}." if rsi_filter and curr_rsi is not None else "RSI filter is off.")
                 )
                 if vol_filter and curr_vol_ma:
                     explanation += f" Volume confirmed at {curr_vol:.1f} (> {vol_p}-SMA {curr_vol_ma:.1f})."
@@ -484,8 +508,8 @@ class EMACrossoverStrategy(BaseStrategy):
                 explanation = (
                     f"SELL ({configured_sell_intent.value} - {intent_desc}): "
                     f"Bearish Death Cross detected on completed candle. "
-                    f"Fast EMA {fast_p} ({curr_fast:.2f}) crossed below Slow EMA {slow_p} ({curr_slow:.2f}). "
-                    f"RSI is confirmed at {curr_rsi:.1f} (between {rsi_oversold} and {rsi_sell_max})."
+                    f"Fast EMA {fast_p} crossed below Middle EMA {self.parameters['middle_period']} with the Middle EMA below Slow EMA {slow_p}. "
+                    + (f"RSI confirmation: {curr_rsi:.1f}." if rsi_filter and curr_rsi is not None else "RSI filter is off.")
                 )
                 if vol_filter and curr_vol_ma:
                     explanation += f" Volume confirmed at {curr_vol:.1f} (> {vol_p}-SMA {curr_vol_ma:.1f})."
@@ -510,8 +534,8 @@ class EMACrossoverStrategy(BaseStrategy):
             rsi_str = f"{curr_rsi:.1f}" if curr_rsi is not None else "N/A"
             explanation = (
                 f"HOLD: No new crossover on completed candle. "
-                f"Fast EMA {fast_p} ({curr_fast:.2f}) is {'above' if curr_fast >= curr_slow else 'below'} "
-                f"Slow EMA {slow_p} ({curr_slow:.2f}) by {diff:.2f} (Trend: {trend}). "
+                f"EMA stack is Fast {curr_fast:.2f}, Middle {curr_middle:.2f}, Slow {curr_slow:.2f} "
+                f"(trend: {trend}). "
                 f"RSI={rsi_str}."
             )
 
