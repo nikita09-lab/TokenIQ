@@ -1,0 +1,27 @@
+{
+  "updated_at": 1792909645,
+  "positions": {
+    "BTCUSD": {
+      "symbol": "BTCUSD",
+      "product_id": 1,
+      "lifecycle_state": "ENTRY_PENDING",
+      "side": null,
+      "quantity": 0.0,
+      "average_entry_price": 0.0,
+      "current_notional_usd": 0.0,
+      "entry_order_id": null,
+      "entry_client_order_id": "tokiq_auto_1792889820_0b805a",
+      "stop_loss_order_id": null,
+      "stop_loss_price": null,
+      "take_profit_order_id": null,
+      "take_profit_price": null,
+      "protection_verified": false,
+      "opened_at": null,
+      "updated_at": 1792909645,
+      "closed_at": null,
+      "realized_pnl_usd": 0.0,
+      "last_exit_reason": null
+    }
+  },
+  "last_exit_times": {}
+}

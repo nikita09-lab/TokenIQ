@@ -1,0 +1,291 @@
+import logging
+import time
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Body, HTTPException, Query, status
+from pydantic import BaseModel, Field
+
+from app.exchanges.delta_client import delta_client
+from app.strategies.base import StrategySignal
+from app.strategies.ema_crossover import InsufficientDataError, InvalidCandleDataError
+from app.strategies.registry import strategy_registry
+
+logger = logging.getLogger("strategies_routes")
+
+router = APIRouter(prefix="/strategies", tags=["Trading Strategies"])
+
+VALID_RESOLUTIONS = ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "1d"]
+
+
+class ConfigureStrategyRequest(BaseModel):
+    parameters: Dict[str, Any] = Field(
+        ...,
+        description="Key-value pairs of strategy parameters to update",
+        json_schema_extra={
+            "example": {
+                "fast_period": 9,
+                "slow_period": 21,
+                "rsi_period": 14,
+                "rsi_filter_enabled": True,
+                "rsi_buy_min": 40.0,
+                "rsi_overbought": 70.0,
+                "rsi_sell_max": 60.0,
+                "rsi_oversold": 30.0,
+                "volume_confirmation_enabled": False,
+                "sell_intent": "CLOSE_LONG",
+            }
+        },
+    )
+
+
+class SignalRequest(BaseModel):
+    symbol: str = Field(..., description="Cryptocurrency trading pair symbol (e.g. 'BTCUSD')")
+    resolution: str = Field(default="1h", description="Candlestick resolution (e.g. '1m', '5m', '15m', '1h', '1d')")
+    overrides: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional temporary parameter overrides for this evaluation without mutating stored configuration",
+    )
+
+
+@router.get("", response_model=Dict[str, Any])
+async def list_strategies() -> Dict[str, Any]:
+    """
+    List all available quantitative strategies with parameter schemas and risk disclaimers.
+    """
+    strategies = strategy_registry.list_strategies()
+    return {
+        "success": True,
+        "count": len(strategies),
+        "strategies": strategies,
+    }
+
+
+@router.get("/{strategy_id}", response_model=Dict[str, Any])
+async def get_strategy_details(strategy_id: str) -> Dict[str, Any]:
+    """
+    Get metadata, schema, and current parameters for a specific strategy.
+    """
+    strategy = strategy_registry.get_strategy(strategy_id)
+    if not strategy:
+        available = [s["strategy_id"] for s in strategy_registry.list_strategies()]
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Strategy '{strategy_id}' not found. Available strategies: {available}",
+        )
+
+    return {
+        "success": True,
+        "strategy_id": strategy.strategy_id,
+        "name": strategy.name,
+        "description": strategy.description,
+        "schema": strategy.get_parameters_schema(),
+        "current_parameters": strategy.parameters,
+    }
+
+
+@router.post("/{strategy_id}/configure", response_model=Dict[str, Any])
+async def configure_strategy(
+    strategy_id: str,
+    body: ConfigureStrategyRequest,
+) -> Dict[str, Any]:
+    """
+    Update configurable parameters for a strategy with strict range and relationship validation.
+    """
+    strategy = strategy_registry.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Strategy '{strategy_id}' not found",
+        )
+
+    try:
+        strategy.configure(body.parameters)
+        return {
+            "success": True,
+            "strategy_id": strategy.strategy_id,
+            "message": "Strategy parameters updated successfully",
+            "updated_parameters": strategy.parameters,
+        }
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid parameter configuration: {str(exc)}",
+        )
+    except Exception as exc:
+        logger.error(f"Error configuring strategy {strategy_id}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to apply strategy parameters: {str(exc)}",
+        )
+
+
+@router.get("/signals/latest", response_model=Dict[str, Any])
+async def get_all_latest_signals() -> Dict[str, Any]:
+    """
+    Retrieve all cached latest signals across registered strategies and symbols.
+    """
+    signals = strategy_registry.get_all_latest_signals()
+    return {
+        "success": True,
+        "count": len(signals),
+        "signals": [s.model_dump() for s in signals],
+    }
+
+
+@router.get("/{strategy_id}/latest-signal", response_model=Dict[str, Any])
+async def get_latest_signal(
+    strategy_id: str,
+    symbol: str = Query(..., description="Trading pair symbol (e.g. BTCUSD)"),
+) -> Dict[str, Any]:
+    """
+    Retrieve the most recent signal generated by the strategy for a specific symbol.
+    """
+    strategy = strategy_registry.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Strategy '{strategy_id}' not found",
+        )
+
+    signal = strategy.get_latest_signal(symbol.upper())
+    if not signal:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"No previous signal found for symbol '{symbol.upper()}' under strategy '{strategy_id}'. "
+                f"Use POST /api/v1/strategies/{strategy_id}/signal to generate a new signal."
+            ),
+        )
+
+    return {
+        "success": True,
+        "signal": signal.model_dump(),
+    }
+
+
+@router.post("/{strategy_id}/signal", response_model=Dict[str, Any])
+async def generate_signal(
+    strategy_id: str,
+    request: SignalRequest,
+) -> Dict[str, Any]:
+    """
+    Fetch real historical candles from Delta Exchange India and generate a signal based on completed candles.
+    """
+    return await _process_signal(
+        strategy_id=strategy_id,
+        symbol=request.symbol,
+        resolution=request.resolution,
+        overrides=request.overrides,
+    )
+
+
+@router.get("/{strategy_id}/signal", response_model=Dict[str, Any])
+async def generate_signal_get(
+    strategy_id: str,
+    symbol: str = Query(..., description="Cryptocurrency trading pair symbol (e.g. BTCUSD)"),
+    resolution: str = Query("1h", description="Candle resolution (e.g. 1m, 5m, 15m, 1h, 1d)"),
+) -> Dict[str, Any]:
+    """
+    Convenience GET endpoint to generate a trading signal for a symbol using current strategy parameters.
+    """
+    return await _process_signal(
+        strategy_id=strategy_id,
+        symbol=symbol,
+        resolution=resolution,
+        overrides=None,
+    )
+
+
+async def _process_signal(
+    strategy_id: str,
+    symbol: str,
+    resolution: str,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    strategy = strategy_registry.get_strategy(strategy_id)
+    if not strategy:
+        available = [s["strategy_id"] for s in strategy_registry.list_strategies()]
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Strategy '{strategy_id}' not found. Available: {available}",
+        )
+
+    clean_symbol = symbol.strip().upper()
+    if not clean_symbol or len(clean_symbol) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Symbol must be a valid cryptocurrency trading pair (e.g. BTCUSD, ETHUSD)",
+        )
+
+    clean_resolution = resolution.strip().lower()
+    if clean_resolution not in VALID_RESOLUTIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid resolution '{resolution}'. Valid resolutions: {VALID_RESOLUTIONS}",
+        )
+
+    # Calculate time window to fetch sufficient candle history
+    res_seconds = delta_client.get_resolution_seconds(clean_resolution)
+    now = int(time.time())
+    # Fetch 150 candles to provide ample warmup for slow EMA (21) and RSI (14)
+    fetch_candles_count = 150
+    start = now - (res_seconds * fetch_candles_count)
+
+    try:
+        candle_data = await delta_client.get_historical_candles(
+            symbol=clean_symbol,
+            resolution=clean_resolution,
+            start=start,
+            end=now,
+        )
+    except Exception as exc:
+        logger.error(f"Exchange error fetching candles for {clean_symbol}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Delta Exchange market data error: {str(exc)}",
+        )
+
+    candles = candle_data.get("candles") or []
+    if not candles:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No candle data available from exchange for symbol '{clean_symbol}' at resolution '{clean_resolution}'",
+        )
+
+    # If temporary overrides were supplied, apply them to a temporary strategy copy
+    target_strategy = strategy
+    if overrides:
+        try:
+            target_strategy = strategy.__class__(custom_params={**strategy.parameters, **overrides})
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid parameter override: {str(exc)}",
+            )
+
+    try:
+        signal = target_strategy.evaluate(
+            candles=candles,
+            symbol=clean_symbol,
+            resolution=clean_resolution,
+            reference_time=now,
+        )
+        return {
+            "success": True,
+            "signal": signal.model_dump(),
+        }
+    except InsufficientDataError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except InvalidCandleDataError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Malformed candle data from exchange: {str(exc)}",
+        )
+    except Exception as exc:
+        logger.error(f"Unexpected strategy evaluation error for {clean_symbol}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Strategy evaluation error: {str(exc)}",
+        )
