@@ -1,24 +1,124 @@
 import os
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 
 load_dotenv()
+
+DEFAULT_PRODUCTION_ORIGINS: List[str] = [
+    "https://token-iq.vercel.app",
+    "https://token-iq-git-main-nikita-santosh-mishras-projects.vercel.app",
+    "https://token-rdmzzyx38-nikita-santosh-mishras-projects.vercel.app",
+]
+
+DEFAULT_DEVELOPMENT_ORIGINS: List[str] = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+]
+
+
+def clean_origin(origin: str) -> Optional[str]:
+    """Clean and normalize a single CORS origin string."""
+    cleaned = origin.strip().rstrip("/")
+    if not cleaned or cleaned == "/":
+        return None
+    # Must have a valid web scheme
+    lower = cleaned.lower()
+    if not (lower.startswith("http://") or lower.startswith("https://") or lower.startswith("ws://") or lower.startswith("wss://")):
+        return None
+    return cleaned
+
+
+def is_allowed_websocket_origin(origin: Optional[str], allowed_origins: List[str]) -> bool:
+    """Check if a WebSocket origin is permitted against allowed origins."""
+    if not origin:
+        # Non-browser clients or test clients might omit the Origin header
+        return True
+    cleaned = clean_origin(origin)
+    if not cleaned:
+        return False
+    if cleaned in allowed_origins:
+        return True
+    http_equivalent = cleaned.replace("wss://", "https://").replace("ws://", "http://")
+    if http_equivalent in allowed_origins:
+        return True
+    return False
+
+
+def parse_cors_origins(raw: Optional[str], environment: str, merge_defaults: bool = True) -> List[str]:
+    """
+    Parse comma-separated CORS origins:
+    - Strips whitespace.
+    - Strips any trailing slashes ('/' is invalid in CORS origin specs).
+    - Ignores empty entries.
+    - Preserves ordering while eliminating duplicates.
+    - When merge_defaults is True, ensures verified Vercel production origins are permitted.
+    """
+    parsed: List[str] = []
+    if raw is not None and raw.strip():
+        items = raw.split(",")
+        for item in items:
+            cleaned = clean_origin(item)
+            if cleaned and cleaned not in parsed:
+                parsed.append(cleaned)
+    else:
+        if environment == "production":
+            parsed = list(DEFAULT_PRODUCTION_ORIGINS)
+        else:
+            parsed = list(DEFAULT_DEVELOPMENT_ORIGINS) + list(DEFAULT_PRODUCTION_ORIGINS)
+
+    if merge_defaults:
+        for prod_origin in DEFAULT_PRODUCTION_ORIGINS:
+            if prod_origin not in parsed:
+                parsed.append(prod_origin)
+
+    return parsed
 
 
 class Settings:
     PROJECT_NAME: str = "TokenIQ Market API"
     VERSION: str = "1.0.0"
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+
+    @property
+    def ENVIRONMENT(self) -> str:
+        return os.getenv("ENVIRONMENT", "development").lower().strip()
+
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "info")
 
-    HOST: str = os.getenv("HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("PORT", "8000"))
+    @property
+    def HOST(self) -> str:
+        return os.getenv("HOST", "0.0.0.0").strip()
+
+    @property
+    def PORT(self) -> int:
+        return int(os.getenv("PORT", "8000"))
+
+    @property
+    def FRONTEND_URL(self) -> str:
+        return os.getenv("FRONTEND_URL", "https://token-iq.vercel.app").strip().rstrip("/")
 
     # Delta Exchange Endpoints & Credentials
-    DELTA_API_URL: str = os.getenv("DELTA_API_URL", "https://cdn-ind.testnet.deltaex.org")
-    DELTA_WS_URL: str = os.getenv("DELTA_WS_URL", "wss://public-socket.india.delta.exchange")
-    DELTA_API_KEY: str = os.getenv("DELTA_API_KEY", "").strip()
-    DELTA_API_SECRET: str = os.getenv("DELTA_API_SECRET", "").strip()
+    @property
+    def DELTA_API_URL(self) -> str:
+        url = (
+            os.getenv("DELTA_API_URL")
+            or os.getenv("DELTA_TESTNET_BASE_URL")
+            or "https://cdn-ind.testnet.deltaex.org"
+        ).strip()
+        return url
+
+    @property
+    def DELTA_WS_URL(self) -> str:
+        return os.getenv("DELTA_WS_URL", "wss://public-socket.india.delta.exchange").strip()
+
+    @property
+    def DELTA_API_KEY(self) -> str:
+        return os.getenv("DELTA_API_KEY", "").strip()
+
+    @property
+    def DELTA_API_SECRET(self) -> str:
+        return os.getenv("DELTA_API_SECRET", "").strip()
 
     @property
     def is_authenticated_configured(self) -> bool:
@@ -41,12 +141,13 @@ class Settings:
             return "***"
         return f"{self.DELTA_API_KEY[:3]}...{self.DELTA_API_KEY[-3:]}"
 
-    # CORS Origins
-    _raw_cors = os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174",
-    )
-    CORS_ORIGINS: List[str] = [origin.strip() for origin in _raw_cors.split(",") if origin.strip()]
+    @property
+    def CORS_ORIGINS(self) -> List[str]:
+        raw = os.getenv("CORS_ORIGINS")
+        return parse_cors_origins(raw, self.ENVIRONMENT)
+
+    def is_origin_allowed(self, origin: Optional[str]) -> bool:
+        return is_allowed_websocket_origin(origin, self.CORS_ORIGINS)
 
     REQUEST_TIMEOUT_SECONDS: float = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "15.0"))
     TICKER_CACHE_TTL_SECONDS: float = float(os.getenv("TICKER_CACHE_TTL_SECONDS", "2.0"))

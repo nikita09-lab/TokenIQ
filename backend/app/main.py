@@ -45,13 +45,32 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+class DynamicCORSMiddleware(CORSMiddleware):
+    """
+    Dynamic CORS middleware that evaluates allowed origins at request time.
+    Guarantees strict adherence to settings.CORS_ORIGINS without wildcard with credentials.
+    """
+
+    def is_allowed_origin(self, origin: str) -> bool:
+        return origin in settings.CORS_ORIGINS
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            origins = settings.CORS_ORIGINS
+            self.allow_origins = origins
+            self.allow_all_origins = False
+        await super().__call__(scope, receive, send)
+
+
 # Configure CORS for frontend origins
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS or ["*"],
+    DynamicCORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=86400,
 )
 
 # Mount API routes
@@ -82,9 +101,16 @@ async def root():
 async def health_check():
     return {
         "status": "healthy",
+        "environment": settings.ENVIRONMENT,
+        "testnet_enforced": settings.is_testnet,
         "upstream_ws_connected": websocket_manager.upstream_connected,
         "active_clients": len(websocket_manager.active_clients),
     }
+
+
+@app.get("/api/v1/health")
+async def api_health_check():
+    return await health_check()
 
 
 if __name__ == "__main__":

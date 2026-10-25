@@ -1,7 +1,9 @@
 import logging
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from starlette import status
 
+from app.core.config import settings
 from app.services.market_data import market_service
 from app.services.websocket_manager import websocket_manager
 
@@ -115,7 +117,14 @@ async def market_websocket_endpoint(websocket: WebSocket):
     """
     Real-time market streaming WebSocket endpoint.
     Frontend connects here to subscribe to ticker and candlestick feeds.
+    Enforces origin verification against configured CORS_ORIGINS.
     """
+    origin = websocket.headers.get("origin")
+    if origin and not settings.is_origin_allowed(origin):
+        logger.warning(f"Rejected WebSocket connection from unauthorized origin: {origin}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await websocket_manager.connect_client(websocket)
     try:
         while True:

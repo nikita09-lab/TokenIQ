@@ -13,9 +13,12 @@ dist-ssr
 # Environment Variables
 .env
 backend/.env
+frontend/.env
+frontend/.env.local
 *.env
 !.env.example
 !backend/.env.example
+!frontend/.env.example
 
 # Python cache & test files
 __pycache__/

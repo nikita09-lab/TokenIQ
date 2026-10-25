@@ -39,10 +39,24 @@ class MarketSocketService {
   private reconnectListeners = new Set<ReconnectListener>();
 
   private getSocketUrl(): string {
+    // 1. Explicit WebSocket URL override if configured
+    const explicitWs = (import.meta.env.VITE_WS_URL as string | undefined)?.trim();
+    if (explicitWs) {
+      return explicitWs.replace(/\/+$/, '');
+    }
+
+    // 2. Derive WebSocket URL from VITE_API_BASE_URL if configured
+    const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim().replace(/\/+$/, '');
+    if (apiBase) {
+      const wsProtocol = apiBase.startsWith('https:') ? 'wss:' : 'ws:';
+      const hostPath = apiBase.replace(/^https?:\/\//, '').replace(/\/api(\/v1)?$/, '');
+      return `${wsProtocol}//${hostPath}/api/v1/market/ws`;
+    }
+
+    // 3. Fallback for local development using Vite proxy
     if (typeof window !== 'undefined') {
       const isSecure = window.location.protocol === 'https:';
       const wsProtocol = isSecure ? 'wss:' : 'ws:';
-      // In dev with Vite proxy, /api/v1/market/ws is proxied to ws://localhost:8000
       return `${wsProtocol}//${window.location.host}/api/v1/market/ws`;
     }
     return 'ws://localhost:8000/api/v1/market/ws';

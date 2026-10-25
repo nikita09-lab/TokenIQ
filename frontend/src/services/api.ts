@@ -6,9 +6,34 @@ import type {
   MarketTicker,
 } from '../types/market';
 
-// Base API paths (Vite dev proxy forwards /api -> http://localhost:8000)
-const API_V1_BASE = '/api/v1';
-const FALLBACK_V1_BASE = 'http://127.0.0.1:8000/api/v1';
+/**
+ * Resolves the API base URL.
+ * In production on Vercel: VITE_API_BASE_URL (e.g. https://tokeniq-backend.onrender.com) is used.
+ * In local development: defaults to relative '/api/v1' which is proxied by Vite dev server to http://127.0.0.1:8000.
+ */
+function resolveApiBaseUrl(): { primary: string; fallback: string } {
+  const rawBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim().replace(/\/+$/, '');
+  if (!rawBase) {
+    return {
+      primary: '/api/v1',
+      fallback: 'http://127.0.0.1:8000/api/v1',
+    };
+  }
+
+  // Normalize if trailing /api or /api/v1 is already present
+  const baseV1 = rawBase.endsWith('/api/v1')
+    ? rawBase
+    : rawBase.endsWith('/api')
+      ? `${rawBase}/v1`
+      : `${rawBase}/api/v1`;
+
+  return {
+    primary: baseV1,
+    fallback: baseV1,
+  };
+}
+
+export const { primary: API_V1_BASE, fallback: FALLBACK_V1_BASE } = resolveApiBaseUrl();
 
 export class ApiClientError extends Error {
   status: number;

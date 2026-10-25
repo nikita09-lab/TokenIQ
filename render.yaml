@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: tokeniq-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: CORS_ORIGINS
+        value: https://token-iq.vercel.app,https://token-iq-git-main-nikita-santosh-mishras-projects.vercel.app,https://token-rdmzzyx38-nikita-santosh-mishras-projects.vercel.app
+      - key: FRONTEND_URL
+        value: https://token-iq.vercel.app
+      - key: DELTA_TESTNET_BASE_URL
+        value: https://cdn-ind.testnet.deltaex.org
+      - key: DELTA_API_URL
+        value: https://cdn-ind.testnet.deltaex.org
+      - key: DELTA_WS_URL
+        value: wss://public-socket.india.delta.exchange
+      - key: DELTA_API_KEY
+        sync: false
+      - key: DELTA_API_SECRET
+        sync: false
