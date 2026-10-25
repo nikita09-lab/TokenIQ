@@ -306,3 +306,20 @@ async def test_evaluation_api_run_success():
 def test_evaluation_api_not_found():
     res = client.get("/api/v1/evaluation/results/non_existent_id_12345")
     assert res.status_code == 404
+
+
+def test_triple_ema_grid_keeps_middle_period_and_disables_rsi_filter():
+    engine = EvaluationEngine(EvaluationRequest())
+    combos, filtered = engine.generate_parameter_combinations(
+        ParameterSearchSpace(
+            fast_periods=[9, 8],
+            middle_periods=[8, 10, 11, 13],
+            slow_periods=[20, 21],
+            volume_confirmation=[False],
+        )
+    )
+    assert filtered > 0
+    assert { (c.fast_period, c.middle_period, c.slow_period) for c in combos } >= {
+        (9, 11, 20), (8, 13, 21)
+    }
+    assert all(c.rsi_filter_enabled is False for c in combos)

@@ -7,10 +7,14 @@ import time
 from typing import Dict, List, Optional
 
 from app.automation.models import AutomatedSignal, SignalLifecycleState
+from app.core.config import get_storage_path
 
 logger = logging.getLogger("signal_deduplicator")
 
-DEFAULT_SIGNALS_FILE = Path(__file__).resolve().parent / "data" / "signals_store.json"
+DEFAULT_SIGNALS_FILE = get_storage_path(
+    "signals_store.json",
+    Path(__file__).resolve().parent / "data" / "signals_store.json",
+)
 
 
 class SignalDeduplicator:

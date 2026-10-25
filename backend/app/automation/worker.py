@@ -141,7 +141,19 @@ class AutomatedTradingWorker:
                     client_order_ids=[o.client_order_id for o in unknown_orders],
                 )
 
-            # 5. Enable in config and update state
+            # 5. Reconcile the target position and fail closed if it is unprotected.
+            # This prevents the worker from silently managing an already-open position
+            # without a verified exchange-side stop/bracket.
+            cfg = await automation_config_manager.get_config()
+            position = await position_manager.reconcile_with_exchange(cfg.trading_symbol)
+            if position.quantity > 0 and not position.protection_verified:
+                raise RuntimeError(
+                    f"Cannot enable automation: existing {cfg.trading_symbol} position "
+                    "has no verified exchange-side stop-loss/bracket protection. "
+                    "Protect or close it on Delta Testnet, then retry."
+                )
+
+            # 6. Enable in config and update state
             await automation_config_manager.set_enabled(True)
             self._state = AutomationState.RUNNING
             self._is_paused = False

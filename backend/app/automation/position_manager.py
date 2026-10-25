@@ -6,11 +6,15 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.automation.models import PositionLifecycleState, PositionStateRecord
+from app.core.config import get_storage_path
 from app.exchanges.delta_client import delta_client
 
 logger = logging.getLogger("position_manager")
 
-DEFAULT_POSITIONS_FILE = Path(__file__).resolve().parent / "data" / "position_state.json"
+DEFAULT_POSITIONS_FILE = get_storage_path(
+    "position_state.json",
+    Path(__file__).resolve().parent / "data" / "position_state.json",
+)
 
 
 class PositionManager:
@@ -276,9 +280,11 @@ class PositionManager:
                 # Verify protective stop-loss against live open orders on exchange
                 has_stop = any(
                     (
-                        o.get("stop_order_type") == "stop_loss"
+                        o.get("stop_order_type") in ("stop_loss_order", "stop_loss")
                         or str(o.get("order_type", "")).lower() == "stop_market_order"
                         or o.get("stop_price") is not None
+                        or o.get("bracket_stop_loss_price") is not None
+                        or o.get("bracket_take_profit_price") is not None
                     )
                     and int(o.get("product_id") or 0) == pos.product_id
                     for o in open_orders

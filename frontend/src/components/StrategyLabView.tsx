@@ -46,40 +46,19 @@ const RESOLUTIONS = [
 
 const PRESETS = [
   {
-    name: 'Quick Grid (9 Sets)',
-    desc: 'Fast EMAs [5, 9, 13] vs Slow EMAs [21, 34, 55]',
-    space: {
-      fast_periods: [5, 9, 13],
-      slow_periods: [21, 34, 55],
-      rsi_periods: [14],
-      rsi_buy_mins: [40.0],
-      rsi_sell_maxs: [60.0],
-      volume_confirmation: [false],
-    },
+    name: 'EMA 9 / 11 / 20',
+    desc: 'Suggested baseline · RSI filter off',
+    space: { fast_periods: [9], middle_periods: [11], slow_periods: [20], rsi_periods: [14], rsi_buy_mins: [40.0], rsi_sell_maxs: [60.0], volume_confirmation: [false] },
   },
   {
-    name: 'Standard Walk-Forward (36 Sets)',
-    desc: 'Moving averages and RSI momentum threshold sensitivity',
-    space: {
-      fast_periods: [7, 9, 13],
-      slow_periods: [21, 34, 50],
-      rsi_periods: [14],
-      rsi_buy_mins: [35.0, 45.0],
-      rsi_sell_maxs: [55.0, 65.0],
-      volume_confirmation: [false],
-    },
+    name: 'EMA 8 / 13 / 21',
+    desc: 'Alternative preset · RSI filter off',
+    space: { fast_periods: [8], middle_periods: [13], slow_periods: [21], rsi_periods: [14], rsi_buy_mins: [40.0], rsi_sell_maxs: [60.0], volume_confirmation: [false] },
   },
   {
-    name: 'Volume & Regime Check (36 Sets)',
-    desc: 'Tests trend confirmation with volume filter enabled/disabled',
-    space: {
-      fast_periods: [5, 9, 13],
-      slow_periods: [21, 34, 55],
-      rsi_periods: [14, 21],
-      rsi_buy_mins: [40.0],
-      rsi_sell_maxs: [60.0],
-      volume_confirmation: [false, true],
-    },
+    name: 'Explore EMA grid',
+    desc: 'Tests valid combinations around both suggested presets',
+    space: { fast_periods: [8, 9], middle_periods: [11, 13], slow_periods: [20, 21], rsi_periods: [14], rsi_buy_mins: [40.0], rsi_sell_maxs: [60.0], volume_confirmation: [false] },
   },
 ];
 
@@ -99,11 +78,9 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
   const [executionMode, setExecutionMode] = useState<'next_open' | 'current_close'>('next_open');
 
   // Discrete parameter search space strings (comma-separated for user convenience)
-  const [fastStr, setFastStr] = useState<string>('5, 9, 13');
-  const [slowStr, setSlowStr] = useState<string>('21, 34, 55');
-  const [rsiStr, setRsiStr] = useState<string>('14');
-  const [buyMinStr, setBuyMinStr] = useState<string>('40');
-  const [sellMaxStr, setSellMaxStr] = useState<string>('60');
+  const [fastStr, setFastStr] = useState<string>('8, 9');
+  const [middleStr, setMiddleStr] = useState<string>('11, 13');
+  const [slowStr, setSlowStr] = useState<string>('20, 21');
   const [volChoice, setVolChoice] = useState<'false' | 'true' | 'both'>('false');
 
   // UI States
@@ -113,7 +90,7 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
   const [selectedRank, setSelectedRank] = useState<number>(1);
   const [sortField, setSortField] = useState<keyof EvaluatedParameterSetData | 'train_ret' | 'test_ret' | 'degradation'>('rank');
   const [sortAsc, setSortAsc] = useState<boolean>(true);
-  const [showConfig, setShowConfig] = useState<boolean>(true);
+  const [showConfig, setShowConfig] = useState<boolean>(false);
 
   // Parse comma-separated numbers into arrays
   const parsedSearchSpace = useMemo<ParameterSearchSpace>(() => {
@@ -126,10 +103,11 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
         .filter((n) => !isNaN(n));
 
     const fast = parseNums(fastStr);
+    const middle = parseNums(middleStr);
     const slow = parseNums(slowStr);
-    const rsi = parseNums(rsiStr);
-    const buyMin = parseNums(buyMinStr);
-    const sellMax = parseNums(sellMaxStr);
+    const rsi = [14];
+    const buyMin = [40];
+    const sellMax = [60];
 
     let vols = [false];
     if (volChoice === 'true') vols = [true];
@@ -137,34 +115,27 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
 
     return {
       fast_periods: fast.length > 0 ? fast : [9],
-      slow_periods: slow.length > 0 ? slow : [21],
+      middle_periods: middle.length > 0 ? middle : [11],
+      slow_periods: slow.length > 0 ? slow : [20],
       rsi_periods: rsi.length > 0 ? rsi : [14],
       rsi_buy_mins: buyMin.length > 0 ? buyMin : [40.0],
       rsi_sell_maxs: sellMax.length > 0 ? sellMax : [60.0],
       volume_confirmation: vols,
     };
-  }, [fastStr, slowStr, rsiStr, buyMinStr, sellMaxStr, volChoice]);
+  }, [fastStr, middleStr, slowStr, volChoice]);
 
   // Dynamic combination counter and validation
   const combinationStats = useMemo(() => {
     let valid = 0;
     let filtered = 0;
-    const { fast_periods, slow_periods, rsi_periods, rsi_buy_mins, rsi_sell_maxs, volume_confirmation } =
-      parsedSearchSpace;
+    const { fast_periods, middle_periods, slow_periods, volume_confirmation } = parsedSearchSpace;
 
     for (const f of fast_periods) {
       for (const s of slow_periods) {
-        for (const r of rsi_periods) {
-          for (const bm of rsi_buy_mins) {
-            for (const sm of rsi_sell_maxs) {
-              for (const v of volume_confirmation) {
-                if (f >= s || bm > sm) {
-                  filtered++;
-                } else {
-                  valid++;
-                }
-              }
-            }
+        for (const m of middle_periods) {
+          for (const v of volume_confirmation) {
+            if (!(f < m && m < s)) filtered++;
+            else valid++;
           }
         }
       }
@@ -175,10 +146,8 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
   // Apply a preset configuration
   const handleApplyPreset = (preset: typeof PRESETS[0]) => {
     setFastStr(preset.space.fast_periods.join(', '));
+    setMiddleStr(preset.space.middle_periods.join(', '));
     setSlowStr(preset.space.slow_periods.join(', '));
-    setRsiStr(preset.space.rsi_periods.join(', '));
-    setBuyMinStr(preset.space.rsi_buy_mins.join(', '));
-    setSellMaxStr(preset.space.rsi_sell_maxs.join(', '));
     if (preset.space.volume_confirmation.length === 2) setVolChoice('both');
     else if (preset.space.volume_confirmation[0]) setVolChoice('true');
     else setVolChoice('false');
@@ -187,7 +156,7 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
   // Run the walk-forward evaluation job
   const handleRunEvaluation = async () => {
     if (combinationStats.valid === 0) {
-      setError('No valid parameter combinations. Ensure each fast EMA is strictly less than slow EMA.');
+      setError('No valid parameter combinations. Ensure Fast EMA < Middle EMA < Slow EMA.');
       return;
     }
     if (combinationStats.isOverLimit) {
@@ -316,7 +285,7 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
             </h1>
           </div>
           <p className="text-xs text-slate-400 font-mono mt-1">
-            Evaluate parameter stability across chronological In-Sample (Train) and Out-of-Sample (Test) periods to detect overfitting before risking capital.
+            Compare Triple EMA settings on training data, then validate the selected setup on unseen candles. RSI filter is off.
           </p>
         </div>
 
@@ -341,7 +310,7 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                Quick Preset Parameter Grids
+                Quick EMA Presets
               </label>
               <span className="text-[11px] text-slate-500 font-mono">1-Click Population</span>
             </div>
@@ -476,14 +445,14 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-                Discrete Parameter Search Space (Comma-Separated Grid)
+                EMA periods to compare
               </label>
               <span className="text-[11px] text-slate-500 font-mono">
-                Auto-validates: Fast EMA must strictly precede Slow EMA
+                Auto-validates: Fast &lt; Middle &lt; Slow
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {/* Fast EMAs */}
               <div className="bg-[#121824] p-3 rounded-lg border border-white/[0.05]">
                 <label className="block text-[11px] font-mono text-cyan-300 mb-1 font-semibold">
@@ -514,49 +483,11 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
                 <span className="text-[10px] text-slate-500 font-mono block mt-1">Must be &gt; Fast</span>
               </div>
 
-              {/* RSI Periods */}
+              {/* Middle EMA */}
               <div className="bg-[#121824] p-3 rounded-lg border border-white/[0.05]">
-                <label className="block text-[11px] font-mono text-cyan-300 mb-1 font-semibold">
-                  RSI Lookbacks
-                </label>
-                <input
-                  type="text"
-                  value={rsiStr}
-                  onChange={(e) => setRsiStr(e.target.value)}
-                  className="w-full bg-[#080A0F] border border-white/10 rounded px-2.5 py-1 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
-                  placeholder="e.g. 14, 21"
-                />
-                <span className="text-[10px] text-slate-500 font-mono block mt-1">Default: 14</span>
-              </div>
-
-              {/* RSI Buy Min */}
-              <div className="bg-[#121824] p-3 rounded-lg border border-white/[0.05]">
-                <label className="block text-[11px] font-mono text-cyan-300 mb-1 font-semibold">
-                  RSI Buy Min (0..100)
-                </label>
-                <input
-                  type="text"
-                  value={buyMinStr}
-                  onChange={(e) => setBuyMinStr(e.target.value)}
-                  className="w-full bg-[#080A0F] border border-white/10 rounded px-2.5 py-1 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
-                  placeholder="e.g. 35, 40, 45"
-                />
-                <span className="text-[10px] text-slate-500 font-mono block mt-1">Momentum floor</span>
-              </div>
-
-              {/* RSI Sell Max */}
-              <div className="bg-[#121824] p-3 rounded-lg border border-white/[0.05]">
-                <label className="block text-[11px] font-mono text-cyan-300 mb-1 font-semibold">
-                  RSI Sell Max (0..100)
-                </label>
-                <input
-                  type="text"
-                  value={sellMaxStr}
-                  onChange={(e) => setSellMaxStr(e.target.value)}
-                  className="w-full bg-[#080A0F] border border-white/10 rounded px-2.5 py-1 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
-                  placeholder="e.g. 55, 60, 65"
-                />
-                <span className="text-[10px] text-slate-500 font-mono block mt-1">Momentum ceiling</span>
+                <label className="block text-[11px] font-mono text-cyan-300 mb-1 font-semibold">Middle EMA Periods</label>
+                <input type="text" value={middleStr} onChange={(e) => setMiddleStr(e.target.value)} className="w-full bg-[#080A0F] border border-white/10 rounded px-2.5 py-1 text-xs text-white font-mono focus:outline-none focus:border-cyan-500" placeholder="e.g. 11, 13" />
+                <span className="text-[10px] text-slate-500 font-mono block mt-1">Between Fast and Slow</span>
               </div>
 
               {/* Volume Filter */}
@@ -1043,7 +974,7 @@ export const StrategyLabView: React.FC<StrategyLabViewProps> = ({
                     >
                       Rank {sortField === 'rank' && (sortAsc ? '▲' : '▼')}
                     </th>
-                    <th className="py-3 px-3">Parameters (EMA / RSI / Vol)</th>
+                    <th className="py-3 px-3">Triple EMA / Volume</th>
                     <th
                       onClick={() => toggleSort('train_ret')}
                       className="py-3 px-3 cursor-pointer hover:text-white text-right"

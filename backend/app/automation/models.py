@@ -68,9 +68,10 @@ class AutomationConfig(BaseModel):
     strategy_parameters: Dict[str, Any] = Field(
         default_factory=lambda: {
             "fast_period": 9,
-            "slow_period": 21,
+            "middle_period": 11,
+            "slow_period": 20,
             "rsi_period": 14,
-            "rsi_filter_enabled": True,
+            "rsi_filter_enabled": False,
             "rsi_buy_min": 40.0,
             "rsi_overbought": 70.0,
             "rsi_sell_max": 60.0,
@@ -140,7 +141,7 @@ class AutomationConfig(BaseModel):
         description="Mandatory protective stop loss distance in percent (e.g. 1.5%)",
     )
     take_profit_percentage: Optional[float] = Field(
-        default=3.0,
+        default=4.0,
         ge=0.5,
         le=50.0,
         description="Optional take profit target in percent",

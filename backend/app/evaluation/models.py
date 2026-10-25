@@ -7,11 +7,15 @@ from app.backtesting.models import EquityPoint, Trade
 
 class ParameterSearchSpace(BaseModel):
     """
-    Defines the discrete parameter grid to evaluate for the EMA Crossover + RSI strategy.
+    Defines the discrete parameter grid for the Triple EMA strategy. Legacy RSI fields are retained for API compatibility but are not used as entry filters.
     """
     fast_periods: List[int] = Field(
         default=[5, 9, 13],
         description="Fast EMA periods to test (must be strictly less than slow EMA periods)",
+    )
+    middle_periods: List[int] = Field(
+        default=[],
+        description="Middle EMA periods to test (must be strictly between fast and slow EMA periods)",
     )
     slow_periods: List[int] = Field(
         default=[21, 34, 55],
@@ -126,6 +130,7 @@ class StrategyParamCombination(BaseModel):
     Specific validated parameter assignment for one backtest run.
     """
     fast_period: int
+    middle_period: int = 11
     slow_period: int
     rsi_period: int
     rsi_buy_min: float

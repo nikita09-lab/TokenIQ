@@ -154,3 +154,16 @@ class Settings:
 
 
 settings = Settings()
+
+
+def get_storage_path(filename: str, fallback_path):
+    """Use persistent storage if TOKENIQ_DATA_DIR is configured."""
+    from pathlib import Path
+    data_dir = os.getenv("TOKENIQ_DATA_DIR", "").strip()
+    if data_dir:
+        path = Path(data_dir) / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+    fallback = Path(fallback_path)
+    fallback.parent.mkdir(parents=True, exist_ok=True)
+    return fallback

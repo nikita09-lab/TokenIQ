@@ -46,6 +46,15 @@ const RESOLUTIONS = [
   { id: '1d', label: '1 Day' },
 ];
 
+const COMPARISON_PRESETS = [
+  { id: '9-11-20', label: 'EMA 9 / 11 / 20', fast: 9, middle: 11, slow: 20 },
+  { id: '8-13-21', label: 'EMA 8 / 13 / 21', fast: 8, middle: 13, slow: 21 },
+  { id: '5-9-21', label: 'EMA 5 / 9 / 21', fast: 5, middle: 9, slow: 21 },
+  { id: '5-13-34', label: 'EMA 5 / 13 / 34', fast: 5, middle: 13, slow: 34 },
+  { id: '8-13-34', label: 'EMA 8 / 13 / 34', fast: 8, middle: 13, slow: 34 },
+  { id: '10-20-50', label: 'EMA 10 / 20 / 50', fast: 10, middle: 20, slow: 50 },
+];
+
 export const BacktestingView: React.FC<BacktestingViewProps> = ({
   initialSymbol = 'BTCUSD',
   onSelectSymbol,
@@ -78,6 +87,8 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BacktestResultData | null>(null);
   const [comparisonResults, setComparisonResults] = useState<BacktestResultData[]>([]);
+  const [selectedComparisonPresets, setSelectedComparisonPresets] = useState<string[]>(['9-11-20', '8-13-21']);
+  const [showComparisonOptions, setShowComparisonOptions] = useState<boolean>(false);
   const [isComparing, setIsComparing] = useState<boolean>(false);
 
   // Selected trade filter in history table
@@ -127,8 +138,19 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
   };
 
   const handleComparePresets = async () => {
+    const selected = COMPARISON_PRESETS.filter((preset) => selectedComparisonPresets.includes(preset.id));
+    if (selected.length < 2) {
+      setError('Select at least 2 EMA presets to compare.');
+      return;
+    }
+    if (selected.length > 6) {
+      setError('Compare up to 6 presets at a time to keep the run manageable.');
+      return;
+    }
+
     setIsComparing(true);
     setError(null);
+    setComparisonResults([]);
     const now = Math.floor(Date.now() / 1000);
     const common = {
       symbol: symbol.trim().toUpperCase(),
@@ -142,10 +164,22 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
       strategy_params: { rsi_filter_enabled: false, sell_intent: 'CLOSE_LONG' },
     } as const;
     try {
-      const first = await runBacktest({ ...common, strategy_params: { ...common.strategy_params, fast_period: 9, middle_period: 11, slow_period: 20 } });
-      const second = await runBacktest({ ...common, strategy_params: { ...common.strategy_params, fast_period: 8, middle_period: 13, slow_period: 21 } });
-      setComparisonResults([first, second]);
-      setResult(first);
+      const results: BacktestResultData[] = [];
+      for (const preset of selected) {
+        const data = await runBacktest({
+          ...common,
+          strategy_params: {
+            ...common.strategy_params,
+            fast_period: preset.fast,
+            middle_period: preset.middle,
+            slow_period: preset.slow,
+          },
+        });
+        results.push(data);
+        setComparisonResults([...results]);
+      }
+      setComparisonResults(results);
+      if (results.length) setResult(results[0]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg || 'Preset comparison failed.');
@@ -265,13 +299,52 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
           )}
         </button>
         <button
-          onClick={handleComparePresets}
+          onClick={() => setShowComparisonOptions((open) => !open)}
           disabled={isRunning || isComparing}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-xs border border-violet-400/30 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20 disabled:opacity-50"
         >
-          {isComparing ? 'Comparing presets…' : 'Compare 9/11/20 vs 8/13/21'}
+          {showComparisonOptions ? 'Hide comparison options' : `Compare strategies (${selectedComparisonPresets.length} selected)`}
         </button>
       </div>
+
+      {showComparisonOptions && (
+        <section className="rounded-xl border border-violet-400/20 bg-[#0B0F17] p-4 space-y-3">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Choose EMA strategies to compare</h3>
+              <p className="text-xs text-slate-400 mt-1">Select 2–6 presets. All runs use the same pair, timeframe, date range, capital, fees and slippage.</p>
+            </div>
+            <span className="text-xs font-mono text-violet-200">{selectedComparisonPresets.length}/6 selected</span>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {COMPARISON_PRESETS.map((preset) => {
+              const checked = selectedComparisonPresets.includes(preset.id);
+              return (
+                <label key={preset.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 text-sm transition-colors ${checked ? 'border-violet-400/40 bg-violet-500/10 text-white' : 'border-white/[0.08] bg-black/10 text-slate-300 hover:border-white/20'}`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={!checked && selectedComparisonPresets.length >= 6}
+                    onChange={(event) => {
+                      setSelectedComparisonPresets((current) => event.target.checked ? [...current, preset.id] : current.filter((id) => id !== preset.id));
+                      setComparisonResults([]);
+                    }}
+                    className="h-4 w-4 accent-violet-400"
+                  />
+                  <span>{preset.label}</span>
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setSelectedComparisonPresets(COMPARISON_PRESETS.map((p) => p.id))} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:bg-white/5">Select all (6)</button>
+            <button type="button" onClick={() => setSelectedComparisonPresets(['9-11-20', '8-13-21'])} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:bg-white/5">Reset to 2 defaults</button>
+            <button type="button" onClick={handleComparePresets} disabled={isRunning || isComparing || selectedComparisonPresets.length < 2} className="ml-auto flex items-center gap-2 rounded-lg bg-violet-400 px-4 py-2.5 text-xs font-semibold text-slate-950 hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-50">
+              {isComparing ? <><RotateCcw className="h-3.5 w-3.5 animate-spin" /> Running {comparisonResults.length + 1} of {selectedComparisonPresets.length}…</> : `Run ${selectedComparisonPresets.length} comparisons`}
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Control Panel Card */}
       <div className="bg-[#0B0F17] border border-white/[0.07] rounded-xl p-5 shadow-sm space-y-5">
@@ -485,19 +558,19 @@ export const BacktestingView: React.FC<BacktestingViewProps> = ({
         </div>
       </div>
 
-      {comparisonResults.length === 2 && (
+      {comparisonResults.length >= 2 && (
         <div className="bg-[#0B0F17] border border-violet-400/20 rounded-xl p-5 space-y-3">
           <div>
-            <h3 className="text-sm font-semibold text-white">Triple EMA Preset Comparison</h3>
+            <h3 className="text-sm font-semibold text-white">Triple EMA Strategy Comparison ({comparisonResults.length} presets)</h3>
             <p className="text-xs text-slate-400 mt-1">Same symbol, candle interval, dates, starting capital, fees and slippage. These are historical simulations, not profit guarantees.</p>
           </div>
           <div className="overflow-x-auto rounded-lg border border-white/[0.06]">
             <table className="w-full text-left text-xs font-mono">
               <thead className="bg-[#0F1420] text-slate-400"><tr><th className="p-3">Preset</th><th className="p-3 text-right">Net P&L</th><th className="p-3 text-right">Return</th><th className="p-3 text-right">Trades</th><th className="p-3 text-right">Win Rate</th><th className="p-3 text-right">Max Drawdown</th><th className="p-3 text-right">Profit Factor</th></tr></thead>
-              <tbody>{comparisonResults.map((item, index) => <tr key={item.backtest_id} className="border-t border-white/[0.06]"><td className="p-3 text-white">{index === 0 ? 'EMA 9 / 11 / 20' : 'EMA 8 / 13 / 21'}</td><td className={`p-3 text-right ${item.metrics.net_profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{item.metrics.net_profit >= 0 ? '+' : ''}${item.metrics.net_profit.toFixed(2)}</td><td className={`p-3 text-right ${item.metrics.net_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{item.metrics.net_return_pct.toFixed(2)}%</td><td className="p-3 text-right text-slate-200">{item.metrics.total_trades}</td><td className="p-3 text-right text-slate-200">{item.metrics.win_rate_pct.toFixed(1)}%</td><td className="p-3 text-right text-rose-300">-{item.metrics.max_drawdown_pct.toFixed(2)}%</td><td className="p-3 text-right text-slate-200">{item.metrics.profit_factor == null ? 'N/A' : item.metrics.profit_factor.toFixed(2)}</td></tr>)}</tbody>
+              <tbody>{comparisonResults.map((item, index) => { const preset = COMPARISON_PRESETS.filter((p) => selectedComparisonPresets.includes(p.id))[index]; return <tr key={item.backtest_id} className="border-t border-white/[0.06]"><td className="p-3 text-white">{preset?.label ?? `EMA preset ${index + 1}`}</td><td className={`p-3 text-right ${item.metrics.net_profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{item.metrics.net_profit >= 0 ? '+' : ''}${item.metrics.net_profit.toFixed(2)}</td><td className={`p-3 text-right ${item.metrics.net_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{item.metrics.net_return_pct.toFixed(2)}%</td><td className="p-3 text-right text-slate-200">{item.metrics.total_trades}</td><td className="p-3 text-right text-slate-200">{item.metrics.win_rate_pct.toFixed(1)}%</td><td className="p-3 text-right text-rose-300">-{item.metrics.max_drawdown_pct.toFixed(2)}%</td><td className="p-3 text-right text-slate-200">{item.metrics.profit_factor == null ? 'N/A' : item.metrics.profit_factor.toFixed(2)}</td></tr>; })}</tbody>
             </table>
           </div>
-          <p className="text-[11px] text-slate-500">The equity chart below shows EMA 9/11/20. Click Run Backtest after choosing the other preset if you want its individual equity curve.</p>
+          <p className="text-[11px] text-slate-500">The equity chart below shows the first selected preset. Compare the table metrics first, then run an individual backtest for any preset whose full equity curve you want to inspect.</p>
         </div>
       )}
 

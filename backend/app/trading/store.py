@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from app.trading.models import OrderExecutionRecord, OrderPreviewResponse, OrderState
+from app.core.config import get_storage_path
 
 logger = logging.getLogger("execution_store")
 
@@ -17,9 +18,11 @@ class ExecutionStore:
     """
 
     def __init__(self, data_file: Optional[Path] = None):
-        self.data_file = (
-            data_file or Path(__file__).resolve().parent / "execution_records.json"
+        self.data_file = data_file or get_storage_path(
+            "execution_records.json",
+            Path(__file__).resolve().parent / "execution_records.json",
         )
+        self.data_file.parent.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
         self._previews: Dict[str, OrderPreviewResponse] = {}
         self._consumed_previews: Dict[str, int] = {}  # preview_id -> consumed_at timestamp

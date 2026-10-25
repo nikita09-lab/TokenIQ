@@ -50,42 +50,40 @@ class ProtectionManager:
         take_profit_price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
-        Submits a protective stop-market order to Delta Exchange Testnet.
-        Opposite side to position (e.g. LONG position -> SELL stop order).
-        
-        Endpoint: POST /v2/orders
-        Payload fields for stop order:
-            product_id: int
-            size: int
-            side: 'sell' if long else 'buy'
-            order_type: 'stop_market_order'
-            stop_order_type: 'stop_loss'
-            stop_price: str(stop_price)
-            stop_trigger_method: 'mark_price'
+        Attach exchange-native bracket protection to an already-open Testnet position.
+
+        Delta's POST /v2/orders/bracket endpoint attaches a stop-loss and optional
+        take-profit to the full open position. It is safer than independent exit
+        orders because the exchange manages the bracket as a single position-level
+        protection object.
         """
         validate_testnet_host(delta_testnet_gateway.host_url)
 
         if not delta_client.api_key or not delta_client.api_secret:
             raise ProtectionPlacementError("API credentials not configured in backend/.env")
+        if quantity <= 0 or stop_price <= 0:
+            raise ProtectionPlacementError("Protection requires positive quantity and stop price.")
+        if take_profit_price is not None and take_profit_price <= 0:
+            raise ProtectionPlacementError("Take-profit price must be positive.")
 
-        clean_size = int(round(quantity)) if abs(quantity - round(quantity)) < 1e-6 else quantity
-        exit_side = "sell" if position_side.upper() == "LONG" else "buy"
-
+        # Delta's bracket API closes the full position; it does not take size/side.
         payload: Dict[str, Any] = {
             "product_id": int(product_id),
-            "size": clean_size,
-            "side": exit_side,
-            "order_type": "stop_market_order",
-            "stop_order_type": "stop_loss",
-            "stop_price": str(stop_price),
-            "stop_trigger_method": "mark_price",
-            "client_order_id": f"sl_{int(time.time())}_{product_id}",
+            "bracket_stop_trigger_method": "mark_price",
+            "stop_loss_order": {
+                "order_type": "market_order",
+                "stop_price": str(stop_price),
+            },
         }
+        if take_profit_price is not None:
+            payload["take_profit_order"] = {
+                "order_type": "market_order",
+                "stop_price": str(take_profit_price),
+            }
 
-        canonical_path = "/v2/orders"
+        canonical_path = "/v2/orders/bracket"
         full_url = f"{delta_testnet_gateway.host_url}{canonical_path}"
         body = json.dumps(payload, separators=(",", ":"))
-
         headers = delta_client.get_auth_headers(
             method="POST",
             path=canonical_path,
@@ -94,31 +92,42 @@ class ProtectionManager:
         )
 
         logger.info(
-            f"Submitting protective stop-loss for {symbol} ({exit_side} {clean_size} contracts @ stop {stop_price})..."
+            "Attaching Testnet bracket protection for %s (%s, stop=%s, take_profit=%s).",
+            symbol,
+            position_side.upper(),
+            stop_price,
+            take_profit_price,
         )
 
         async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
             try:
                 response = await client.post(full_url, content=body, headers=headers)
             except Exception as exc:
-                logger.error(f"Network transport error submitting stop-loss: {exc}")
-                raise ProtectionPlacementError(f"Network error placing stop-loss: {exc}")
+                logger.error("Network transport error submitting bracket protection: %s", exc)
+                raise ProtectionPlacementError(f"Network error placing bracket protection: {exc}")
 
         status = response.status_code
         try:
             data = response.json()
         except Exception:
-            raise ProtectionPlacementError(f"Invalid JSON from exchange (HTTP {status}): {response.text}")
+            raise ProtectionPlacementError(
+                f"Invalid JSON from exchange (HTTP {status}): {response.text}"
+            )
 
         if status == 200 and data.get("success"):
-            order_info = data.get("result") or {}
-            logger.info(
-                f"Protective stop-loss verified on Delta Testnet! ID: {order_info.get('id')}"
-            )
-            return order_info
+            # Delta may return only {"success": true} for bracket requests; retain
+            # the acknowledged protection levels for local telemetry.
+            result = data.get("result") if isinstance(data.get("result"), dict) else {}
+            return {
+                **result,
+                "bracket_attached": True,
+                "product_id": int(product_id),
+                "stop_loss_price": stop_price,
+                "take_profit_price": take_profit_price,
+            }
 
         error_msg = (data.get("error") or {}).get("message") or data.get("message") or response.text
-        raise ProtectionPlacementError(f"Delta Exchange rejected protective stop-loss: {error_msg}")
+        raise ProtectionPlacementError(f"Delta Exchange rejected bracket protection: {error_msg}")
 
     async def execute_emergency_position_close(
         self,

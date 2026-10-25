@@ -13,7 +13,7 @@ export interface HistoryRangeConfig {
   endDateStr?: string;   // YYYY-MM-DD
 }
 
-export type ActiveTab = 'overview' | 'charts' | 'watchlist' | 'backtesting' | 'evaluation' | 'wallet' | 'safety' | 'about';
+export type ActiveTab = 'overview' | 'charts' | 'watchlist' | 'strategy-center' | 'backtesting' | 'evaluation' | 'wallet' | 'safety' | 'about';
 
 export interface DeltaRawTicker {
   symbol: string;
@@ -201,6 +201,7 @@ export interface BacktestResultData {
 
 export interface ParameterSearchSpace {
   fast_periods: number[];
+  middle_periods: number[];
   slow_periods: number[];
   rsi_periods: number[];
   rsi_buy_mins: number[];
@@ -251,6 +252,7 @@ export interface PeriodMetricsData {
 
 export interface StrategyParamCombinationData {
   fast_period: number;
+  middle_period: number;
   slow_period: number;
   rsi_period: number;
   rsi_buy_min: number;
