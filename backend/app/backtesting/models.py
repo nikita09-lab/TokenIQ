@@ -44,7 +44,7 @@ class BacktestRequest(BaseModel):
     )
     strategy_params: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Optional overrides for EMA Crossover strategy (fast_period, slow_period, rsi_period, etc.)",
+        description="Optional overrides for Triple EMA strategy (fast_period, middle_period, slow_period, optional RSI/volume filters).",
     )
 
 

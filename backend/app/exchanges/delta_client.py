@@ -862,7 +862,7 @@ class DeltaExchangeClient:
         seen_times = set()
         candles: List[Dict[str, Any]] = []
         current_end = end
-        max_chunks = 3
+        max_chunks = 10
         chunks_fetched = 0
 
         while current_end > start and chunks_fetched < max_chunks:

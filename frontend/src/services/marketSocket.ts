@@ -39,18 +39,29 @@ class MarketSocketService {
   private reconnectListeners = new Set<ReconnectListener>();
 
   private getSocketUrl(): string {
+    const envObj = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+
     // 1. Explicit WebSocket URL override if configured
-    const explicitWs = (import.meta.env.VITE_WS_URL as string | undefined)?.trim();
+    const explicitWs = (envObj?.VITE_WS_URL || (import.meta as any).env?.VITE_WS_URL)?.trim();
     if (explicitWs) {
       return explicitWs.replace(/\/+$/, '');
     }
 
     // 2. Derive WebSocket URL from VITE_API_BASE_URL if configured
-    const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim().replace(/\/+$/, '');
+    const apiBase = (envObj?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_BASE_URL)?.trim().replace(/\/+$/, '');
     if (apiBase) {
-      const wsProtocol = apiBase.startsWith('https:') ? 'wss:' : 'ws:';
-      const hostPath = apiBase.replace(/^https?:\/\//, '').replace(/\/api(\/v1)?$/, '');
-      return `${wsProtocol}//${hostPath}/api/v1/market/ws`;
+      try {
+        const backendUrl = new URL(apiBase);
+        backendUrl.protocol = backendUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+        backendUrl.pathname = '/api/v1/market/ws';
+        backendUrl.search = '';
+        backendUrl.hash = '';
+        return backendUrl.toString();
+      } catch {
+        const wsProtocol = apiBase.startsWith('https:') ? 'wss:' : 'ws:';
+        const hostPath = apiBase.replace(/^https?:\/\//, '').replace(/\/api(\/v1)?$/, '');
+        return `${wsProtocol}//${hostPath}/api/v1/market/ws`;
+      }
     }
 
     // 3. Fallback for local development using Vite proxy

@@ -84,7 +84,7 @@ class BacktestEngine:
 
         min_required = max(
             self.strategy.parameters["slow_period"],
-            self.strategy.parameters["rsi_period"],
+            self.strategy.parameters["rsi_period"] if self.strategy.parameters["rsi_filter_enabled"] else 0,
             self.strategy.parameters["volume_ma_period"] if self.strategy.parameters["volume_confirmation_enabled"] else 0,
         ) + 5
 
@@ -96,11 +96,13 @@ class BacktestEngine:
 
         # Compute technical indicators
         fast_p = self.strategy.parameters["fast_period"]
+        middle_p = self.strategy.parameters["middle_period"]
         slow_p = self.strategy.parameters["slow_period"]
         rsi_p = self.strategy.parameters["rsi_period"]
         vol_p = self.strategy.parameters["volume_ma_period"]
 
         df["fast_ema"] = calculate_ema(df["close"], fast_p)
+        df["middle_ema"] = calculate_ema(df["close"], middle_p)
         df["slow_ema"] = calculate_ema(df["close"], slow_p)
         df["rsi"] = calculate_rsi(df["close"], rsi_p)
 
@@ -131,7 +133,7 @@ class BacktestEngine:
         vol_filter = self.strategy.parameters["volume_confirmation_enabled"]
         warmup_idx = max(
             self.strategy.parameters["slow_period"],
-            self.strategy.parameters["rsi_period"],
+            self.strategy.parameters["rsi_period"] if self.strategy.parameters["rsi_filter_enabled"] else 0,
         ) + 1
 
         # State tracking
@@ -223,12 +225,18 @@ class BacktestEngine:
                 prev_bar = df.iloc[i - 1]
 
                 prev_fast = float(prev_bar["fast_ema"])
+                prev_middle = float(prev_bar["middle_ema"])
                 prev_slow = float(prev_bar["slow_ema"])
                 curr_fast = float(curr_bar["fast_ema"])
+                curr_middle = float(curr_bar["middle_ema"])
                 curr_slow = float(curr_bar["slow_ema"])
 
-                bullish_crossover = (prev_fast <= prev_slow) and (curr_fast > curr_slow)
-                bearish_crossover = (prev_fast >= prev_slow) and (curr_fast < curr_slow)
+                if self.strategy._legacy_two_ema:
+                    bullish_crossover = (prev_fast <= prev_slow) and (curr_fast > curr_slow)
+                    bearish_crossover = (prev_fast >= prev_slow) and (curr_fast < curr_slow)
+                else:
+                    bullish_crossover = (prev_fast <= prev_middle) and (curr_fast > curr_middle) and (curr_middle > curr_slow)
+                    bearish_crossover = (prev_fast >= prev_middle) and (curr_fast < curr_middle) and (curr_middle < curr_slow)
 
                 curr_rsi = float(curr_bar["rsi"]) if not np.isnan(curr_bar["rsi"]) else None
                 curr_vol = float(curr_bar["volume"]) if not np.isnan(curr_bar["volume"]) else None

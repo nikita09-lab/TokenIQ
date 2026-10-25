@@ -12,7 +12,8 @@ import type {
  * In local development: defaults to relative '/api/v1' which is proxied by Vite dev server to http://127.0.0.1:8000.
  */
 function resolveApiBaseUrl(): { primary: string; fallback: string } {
-  const rawBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim().replace(/\/+$/, '');
+  const envObj = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+  const rawBase = (envObj?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_BASE_URL)?.trim().replace(/\/+$/, '');
   if (!rawBase) {
     return {
       primary: '/api/v1',
