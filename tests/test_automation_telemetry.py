@@ -79,7 +79,7 @@ def test_protective_stop_flat_position_semantics(test_client):
 
 
 @pytest.mark.asyncio
-async def test_account_overview_cache_short_ttl():
+async def test_account_overview_cache_short_ttl(monkeypatch):
     """
     Verify that delta_client.get_account_overview caches responses within 2.5s
     to avoid hammering the exchange when multiple dashboard components query status concurrently.
@@ -92,6 +92,10 @@ async def test_account_overview_cache_short_ttl():
         "open_orders": [],
         "recent_orders": [],
     }
+
+    # Provide test credentials so the method exercises the authenticated cache path.
+    monkeypatch.setattr(delta_client, "api_key", "test-api-key")
+    monkeypatch.setattr(delta_client, "api_secret", "test-api-secret")
 
     # Clear any previous cache
     delta_client._account_overview_cache = None

@@ -5,10 +5,14 @@ from pathlib import Path
 from typing import Optional
 
 from app.automation.models import AutomationConfig
+from app.core.config import get_storage_path
 
 logger = logging.getLogger("automation_config")
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "data" / "automation_config.json"
+DEFAULT_CONFIG_PATH = get_storage_path(
+    "automation_config.json",
+    Path(__file__).resolve().parent / "data" / "automation_config.json",
+)
 
 
 class AutomationConfigManager:

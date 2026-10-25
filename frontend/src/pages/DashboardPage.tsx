@@ -6,8 +6,7 @@ import { MarketTable } from '../components/MarketTable';
 import { MarketChart } from '../components/MarketChart';
 import { MarketDetails } from '../components/MarketDetails';
 import { AboutView } from '../components/AboutView';
-import { BacktestingView } from '../components/BacktestingView';
-import { StrategyLabView } from '../components/StrategyLabView';
+import { StrategyCenterView } from '../components/StrategyCenterView';
 import { AccountWalletView } from '../components/AccountWalletView';
 import { TradingSafetyView } from '../components/TradingSafetyView';
 import { useMarketData } from '../hooks/useMarketData';
@@ -249,20 +248,9 @@ export const DashboardPage: React.FC = () => {
             )}
           </div>
 
-          {/* Strategy Backtesting View */}
-          {activeTab === 'backtesting' && (
-            <BacktestingView
-              initialSymbol={selectedSymbol}
-              onSelectSymbol={handleSelectPair}
-            />
-          )}
-
-          {/* Phase 4: Strategy Lab (Evaluation and Robustness Testing) */}
-          {activeTab === 'evaluation' && (
-            <StrategyLabView
-              initialSymbol={selectedSymbol}
-              onSelectSymbol={handleSelectPair}
-            />
+          {/* Unified strategy workspace: historical backtest + walk-forward validation */}
+          {activeTab === 'strategy-center' && (
+            <StrategyCenterView initialSymbol={selectedSymbol} onSelectSymbol={handleSelectPair} />
           )}
 
           {/* Phase 6: Testnet Wallet & Account View */}

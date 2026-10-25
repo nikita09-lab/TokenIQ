@@ -20,8 +20,10 @@ from app.risk.models import (
 
 logger = logging.getLogger("risk_engine")
 
-STATE_FILE_PATH = Path(__file__).parent / "safety_state.json"
-CONFIG_FILE_PATH = Path(__file__).parent / "risk_config.json"
+from app.core.config import get_storage_path
+
+STATE_FILE_PATH = get_storage_path("safety_state.json", Path(__file__).parent / "safety_state.json")
+CONFIG_FILE_PATH = get_storage_path("risk_config.json", Path(__file__).parent / "risk_config.json")
 
 
 class RiskEngine:

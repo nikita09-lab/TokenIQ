@@ -109,11 +109,12 @@ class EvaluationService:
             ],
             "preset_grids": [
                 {
-                    "name": "Quick Exploration (9 sets)",
-                    "description": "Fast evaluation across 3 fast EMAs and 3 slow EMAs with fixed RSI",
+                    "name": "EMA 9 / 11 / 20",
+                    "description": "Triple EMA baseline with RSI filter disabled",
                     "search_space": {
-                        "fast_periods": [5, 9, 13],
-                        "slow_periods": [21, 34, 55],
+                        "fast_periods": [9],
+                        "middle_periods": [11],
+                        "slow_periods": [20],
                         "rsi_periods": [14],
                         "rsi_buy_mins": [40.0],
                         "rsi_sell_maxs": [60.0],
@@ -121,11 +122,12 @@ class EvaluationService:
                     },
                 },
                 {
-                    "name": "Standard Grid (36 sets)",
-                    "description": "Explores moving averages and RSI momentum threshold sensitivity",
+                    "name": "EMA 8 / 13 / 21",
+                    "description": "Alternative Triple EMA preset with RSI filter disabled",
                     "search_space": {
-                        "fast_periods": [7, 9, 13],
-                        "slow_periods": [21, 34, 50],
+                        "fast_periods": [8],
+                        "middle_periods": [13],
+                        "slow_periods": [21],
                         "rsi_periods": [14],
                         "rsi_buy_mins": [35.0, 45.0],
                         "rsi_sell_maxs": [55.0, 65.0],
@@ -133,12 +135,13 @@ class EvaluationService:
                     },
                 },
                 {
-                    "name": "Volume & Trend Sensitivity (36 sets)",
-                    "description": "Tests volume confirmation alongside EMA combinations",
+                    "name": "Triple EMA + Volume Check",
+                    "description": "Tests the baseline EMA setup with volume confirmation on or off",
                     "search_space": {
-                        "fast_periods": [5, 9, 13],
-                        "slow_periods": [21, 34, 55],
-                        "rsi_periods": [14, 21],
+                        "fast_periods": [9],
+                        "middle_periods": [11],
+                        "slow_periods": [20],
+                        "rsi_periods": [14],
                         "rsi_buy_mins": [40.0],
                         "rsi_sell_maxs": [60.0],
                         "volume_confirmation": [False, True],

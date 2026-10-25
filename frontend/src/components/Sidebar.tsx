@@ -10,7 +10,6 @@ import {
   ExternalLink,
   ShieldCheck,
   Layers,
-  FlaskConical,
   Wallet,
   ShieldAlert,
 } from 'lucide-react';
@@ -51,16 +50,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: watchlistCount > 0 ? String(watchlistCount) : null,
     },
     {
-      id: 'backtesting' as ActiveTab,
-      label: 'Strategy Backtest',
+      id: 'strategy-center' as ActiveTab,
+      label: 'Strategy Center',
       icon: <Layers className="w-4 h-4 shrink-0" />,
       badge: null,
-    },
-    {
-      id: 'evaluation' as ActiveTab,
-      label: 'Strategy Lab',
-      icon: <FlaskConical className="w-4 h-4 shrink-0" />,
-      badge: 'PHASE 4',
     },
     {
       id: 'wallet' as ActiveTab,

@@ -300,9 +300,16 @@ class AutomatedOrderExecutor:
                     await position_manager.update_lifecycle_state(
                         signal.symbol,
                         PositionLifecycleState.PROTECTION_VERIFIED,
-                        stop_loss_order_id=str(stop_order.get("id")),
+                        stop_loss_order_id=(
+                            str(stop_order["id"]) if stop_order.get("id") is not None else None
+                        ),
+                        take_profit_order_id=(
+                            str(stop_order["take_profit_order_id"])
+                            if stop_order.get("take_profit_order_id") is not None else None
+                        ),
                         stop_loss_price=signal.stop_loss_price,
-                        protection_verified=True,
+                        take_profit_price=signal.take_profit_price,
+                        protection_verified=bool(stop_order.get("bracket_attached", stop_order.get("id"))),
                     )
                     await signal_deduplicator.update_lifecycle(
                         signal.signal_id, SignalLifecycleState.FILLED

@@ -74,63 +74,39 @@ class EvaluationEngine:
             (valid_combinations, filtered_invalid_count)
         """
         fast_list = search_space.fast_periods or [9]
-        slow_list = search_space.slow_periods or [21]
-        rsi_list = search_space.rsi_periods or [14]
-        buy_min_list = search_space.rsi_buy_mins or [40.0]
-        sell_max_list = search_space.rsi_sell_maxs or [60.0]
+        middle_list = search_space.middle_periods or [0]  # legacy callers derive a midpoint per fast/slow pair
+        slow_list = search_space.slow_periods or [20]
         vol_list = search_space.volume_confirmation or [False]
 
-        # Basic item validation
         for f in fast_list:
             if not isinstance(f, int) or f < 2:
                 raise EvaluationValidationError(f"Invalid fast_period {f}: must be an integer >= 2.")
+        for m in middle_list:
+            if m != 0 and (not isinstance(m, int) or m < 3):
+                raise EvaluationValidationError(f"Invalid middle_period {m}: must be an integer >= 3.")
         for s in slow_list:
-            if not isinstance(s, int) or s < 3:
-                raise EvaluationValidationError(f"Invalid slow_period {s}: must be an integer >= 3.")
-        for r in rsi_list:
-            if not isinstance(r, int) or r < 2:
-                raise EvaluationValidationError(f"Invalid rsi_period {r}: must be an integer >= 2.")
-        for bm in buy_min_list:
-            if not (0.0 <= float(bm) <= 100.0):
-                raise EvaluationValidationError(f"Invalid rsi_buy_min {bm}: must be between 0 and 100.")
-        for sm in sell_max_list:
-            if not (0.0 <= float(sm) <= 100.0):
-                raise EvaluationValidationError(f"Invalid rsi_sell_max {sm}: must be between 0 and 100.")
+            if not isinstance(s, int) or s < 4:
+                raise EvaluationValidationError(f"Invalid slow_period {s}: must be an integer >= 4.")
 
-        total_cartesian = (
-            len(fast_list)
-            * len(slow_list)
-            * len(rsi_list)
-            * len(buy_min_list)
-            * len(sell_max_list)
-            * len(vol_list)
-        )
-
+        total_cartesian = len(fast_list) * len(middle_list) * len(slow_list) * len(vol_list)
         valid_combinations: List[StrategyParamCombination] = []
         filtered_count = 0
-
-        for fast, slow, rsi, buy_min, sell_max, vol in itertools.product(
-            fast_list, slow_list, rsi_list, buy_min_list, sell_max_list, vol_list
-        ):
-            # Validate: Fast EMA must be strictly less than Slow EMA
-            if fast >= slow:
+        for fast, middle, slow, vol in itertools.product(fast_list, middle_list, slow_list, vol_list):
+            if middle == 0:
+                middle = (fast + slow) // 2
+            if not (fast < middle < slow):
                 filtered_count += 1
                 continue
-
-            # Validate: rsi_buy_min must not exceed rsi_sell_max to allow logical trades
-            if buy_min > sell_max:
-                filtered_count += 1
-                continue
-
             valid_combinations.append(
                 StrategyParamCombination(
                     fast_period=fast,
+                    middle_period=middle,
                     slow_period=slow,
-                    rsi_period=rsi,
-                    rsi_buy_min=float(buy_min),
-                    rsi_sell_max=float(sell_max),
+                    rsi_period=14,
+                    rsi_buy_min=40.0,
+                    rsi_sell_max=60.0,
                     volume_confirmation_enabled=bool(vol),
-                    rsi_filter_enabled=True,
+                    rsi_filter_enabled=False,
                     rsi_overbought=70.0,
                     rsi_oversold=30.0,
                     volume_ma_period=20,
@@ -140,8 +116,7 @@ class EvaluationEngine:
 
         if not valid_combinations:
             raise EvaluationValidationError(
-                "No valid parameter combinations found. Ensure each fast_period is strictly less than slow_period, "
-                "and rsi_buy_min <= rsi_sell_max."
+                "No valid parameter combinations found. Ensure fast_period < middle_period < slow_period."
             )
 
         if len(valid_combinations) > self.request.max_combinations:
@@ -408,10 +383,7 @@ class EvaluationEngine:
             )
 
             vol_label = "Vol: On" if combo.volume_confirmation_enabled else "Vol: Off"
-            label = (
-                f"EMA {combo.fast_period}/{combo.slow_period} | "
-                f"RSI {combo.rsi_period} ({int(combo.rsi_buy_min)}/{int(combo.rsi_sell_max)}) | {vol_label}"
-            )
+            label = f"Triple EMA {combo.fast_period}/{combo.middle_period}/{combo.slow_period} | {vol_label} | RSI off"
 
             evaluated_sets.append({
                 "combo": combo,
